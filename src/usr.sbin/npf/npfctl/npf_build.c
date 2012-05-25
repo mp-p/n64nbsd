@@ -442,9 +442,28 @@ npfctl_build_nat(int type, u_int if_idx, const filt_opts_t *fopts,
 
 	ai = npfctl_get_singlefam(var1);
 	assert(ai != NULL);
+
 	if (ai->fam_family != AF_INET) {
-		yyerror("IPv6 NAT is not supported");
-	}
+	/* separate for now AF_INET6 NAT from AF_INET */
+		switch (type) {
+		case NPFCTL_NPT: {
+			fam_addr_mask_t *tai = npfctl_get_singleadam(var2);
+			assert(tai != NULL);
+			if (ai->fam_family != AF_INET6) {
+				yyerror("NPT is only between IPv6");
+			}
+			nat = npf_nat_create(NPF_NATIN, 0, if_idx, 
+			    &tai->fam_addr, tai->fam_family, 0);
+			npfctl_build_ncode(nat, AF_INET6, &op, fopts, true);
+			npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
+			npf = npf_nat_create(NPF_NATOUT, type == NPFCTL_NAT ? (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
+			    if_idx. &ai->fam_addr, ai->fam_family, 0);
+		}
+		default:
+			assert(false);
+		}
+
+	} else {
 
 	switch (type) {
 	case NPFCTL_RDR: {
@@ -483,9 +502,10 @@ npfctl_build_nat(int type, u_int if_idx, const filt_opts_t *fopts,
 		    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
 		    if_idx, &ai->fam_addr, ai->fam_family, 0);
 		break;
-	}
+   	}
 	default:
 		assert(false);
+	}
 	}
 	npfctl_build_ncode(nat, AF_INET, &op, fopts, false);
 	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);

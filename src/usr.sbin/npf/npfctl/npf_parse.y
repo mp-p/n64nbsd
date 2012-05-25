@@ -98,6 +98,7 @@ yyerror(const char *fmt, ...)
 %token			KEEP
 %token			MINUS
 %token			NAT
+%token			NPT
 %token			NAME
 %token			ON
 %token			OUT
@@ -135,7 +136,7 @@ yyerror(const char *fmt, ...)
 
 %type	<str>		addr, iface_name, moduleargname, list_elem, table_store
 %type	<str>		opt_apply
-%type	<num>		ifindex, port, opt_quick, on_iface
+%type	<num>		ifindex, port, opt_quick, on_iface, prefix_len
 %type	<num>		block_or_pass, rule_dir, block_opts, family, opt_family
 %type	<num>		opt_keep_state, icmp_type, table_type
 %type	<var>		addr_or_iface, port_range, icmp_type_and_code
@@ -257,6 +258,7 @@ nat
 	: natdef
 	| binatdef
 	| rdrdef
+	| nptdef
 	;
 
 natdef
@@ -280,6 +282,12 @@ rdrdef
 	}
 	;
 
+nptdef
+	: NPT ifindex filt_opts ARROW addr_or_iface
+	{
+		npfctl_build_nat(NPFCTL_NPT, $2, &$3, $5, $3.fo_from);
+	}
+	;
 rproc
 	: PROCEDURE STRING CURLY_OPEN procs CURLY_CLOSE
 	{
