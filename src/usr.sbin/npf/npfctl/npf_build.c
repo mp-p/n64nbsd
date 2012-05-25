@@ -502,7 +502,7 @@ npfctl_build_nat(int type, u_int if_idx, const filt_opts_t *fopts,
 		    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
 		    if_idx, &ai->fam_addr, ai->fam_family, 0);
 		break;
-   	}
+	}
 	default:
 		assert(false);
 	}
