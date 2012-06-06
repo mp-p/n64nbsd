@@ -562,6 +562,37 @@ npf_nat_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	}
 	return 0;
 }
+static int
+npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
+    const bool forw, const int di)
+{
+	void *n_ptr = nbuf_dataptr(nbuf);
+	npf_natpolicy_t *np = nt->nt_natpolicy;
+	npf_addr_t *addr;
+	KASSERT(npf_iscached(npc, NPC_IP46));
+	
+	if (forw) {
+		/* "Forwards" */
+		KASSERT(
+		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
+		    (np->n_type == NPF_NATOUT && di == PFIL_OUT)
+		);
+		addr = &np->n_taddr;
+		/* addjustmetn addition and check missing */
+	} else {
+		/* "Backwards" */
+		KASSERT(
+		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
+		    (np->n_type == NPF_NATOUT && di == PFIL_IN)
+		);
+		addr = &np->nt_oaddr;
+		/* addjustment substraction and check missing */
+	}
+	if (!npf_rwrip(npc, nbuf, n_ptr, di, addr)) {
+		return EINVAL;
+	}
+	return 0;
+}
 
 /*
  * npf_do_nat:

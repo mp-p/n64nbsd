@@ -122,6 +122,38 @@ npf_addr_sum(const int sz, const npf_addr_t *a1, const npf_addr_t *a2)
 }
 
 /*
+ * npt_npf_adj: calculates address adjustment for NPTv6 prefix translation.
+ * NOTICE: Currently it should be used only for /48 prefix translation.
+ */
+
+uint16_t
+npf_npt_adj(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
+{
+	uint16_t adj, sia = 0; soa = 0;
+	uint16_t max_dwrds = px >> 4;
+	int i;
+
+	KASSERT(px > 0 && px < NPF_MAX_NETMASK && ia != NULL && oa != NULL);
+	
+	for (i = 0; i < max_dwrds; i++) {
+		sin += in->s6_addr16[i];
+		soa += oa->s6_addr16[i];
+	}
+
+	while (0xFFFF < sia)
+		sia = sia + 1 - 0x10000;
+	while (0xFFFF < sa2)
+		soa = soa + 1 - 0x10000;
+
+	adj = sin - soa;
+
+	while (0xFFFF < adj)
+		adj = adj + 1 - 0x10000;
+
+	return adj;
+}
+
+/*
  * npf_tcpsaw: helper to fetch SEQ, ACK, WIN and return TCP data length.
  * Returns all values in host byte-order.
  */
