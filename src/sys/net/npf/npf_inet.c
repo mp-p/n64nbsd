@@ -122,12 +122,11 @@ npf_addr_sum(const int sz, const npf_addr_t *a1, const npf_addr_t *a2)
 }
 
 /*
- * npt_npf_adj: calculates address adjustment for NPTv6 prefix translation.
+ * npf_npt_adj_calc: calculates address adjustment for NPTv6 prefix translation.
  * NOTICE: Currently it should be used only for /48 prefix translation.
  */
-
 uint16_t
-npf_npt_adj(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
+npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
 {
 	uint16_t adj, sia = 0; soa = 0;
 	uint16_t max_dwrds = px >> 4;
@@ -136,23 +135,97 @@ npf_npt_adj(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
 	KASSERT(px > 0 && px < NPF_MAX_NETMASK && ia != NULL && oa != NULL);
 	
 	for (i = 0; i < max_dwrds; i++) {
-		sin += in->s6_addr16[i];
+		sia += ia->s6_addr16[i];
 		soa += oa->s6_addr16[i];
 	}
 
-	while (0xFFFF < sia)
+	while (0xFFFF <= sia)
 		sia = sia + 1 - 0x10000;
-	while (0xFFFF < sa2)
+	while (0xFFFF <= sa2)
 		soa = soa + 1 - 0x10000;
 
 	adj = sin - soa;
 
-	while (0xFFFF < adj)
+	while (0xFFFF <= adj)
 		adj = adj + 1 - 0x10000;
 
 	return adj;
 }
 
+/*
+ * npf_npt_adj_add: adds npt adjustment to proper IPv6 address part.
+ * NOTICE: Currently it should be used only for /48 prefix translation.
+ */
+void
+npf_npt_adj_add(int px, npf_addr_t *a, uint16_t adj)
+{
+	uint16_t dw = px >> 4;
+	uint16_t ap = a->s6_addr16[dw];
+
+	ap += adj;
+
+	while (0xFFFF <= ap)
+		ap = ap + 1 - 0x10000;
+
+	a->s6_addr16[dw] = ap;
+}
+
+/*
+ * npf_npt_adj_sub: sublimates npt adjustment from propper address
+ * part. Basicaly it is addition with negative adjustment.
+ * NOTICE: The same limitations as npf_npt_adj_add.
+ */
+void
+npf_npt_adj_sub(int px, npf_addr_t *a, uint16_t adj)
+{
+	npf_npt_adj_add(px, a, ~adj);
+}
+
+/*
+ * npf_addr_px_eq_chk: really overcomplicated function comparing
+ * prefix of two addresses. It only returns true if both addresses
+ * parts are equal.
+ */
+bool
+npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t a2)
+{
+	uint8_t dw = px >> 4, dc = 0;
+	uint8_t sw = dw << 4 - px >> 3, sc;
+	uint8_t bp = 0, bc;
+
+	while (dw > dc)
+		if (a1->s6_addr16[dc] == a2->s6_addr16[dc])
+			dc++;
+			continue;
+		else
+			return false;
+	sc = dc << 1;
+	while (sw > sc)
+		if (a1->s6_addr[sc] == a2->s6_addr[sc])
+			sc++;
+			continue;
+		else
+			return false;
+/*
+ * This is easier one but who needs this? (-:
+
+	sw = px >> 3;
+	if (memcmp(a1->s6_addr, a2->s6_addr, sizeof(uint8_t) * sw) != 0)
+		return false;
+
+ * and ofcourse that below...
+ */
+
+	bc = sc << 3;
+	while (px > bc)
+		if ((s6_addr[sc] << bc) & 64
+		    == (s6_addr[sc] << bc) & 64) {
+			bc++;
+			continue;
+		} else
+			return false;
+	return true;
+}
 /*
  * npf_tcpsaw: helper to fetch SEQ, ACK, WIN and return TCP data length.
  * Returns all values in host byte-order.
