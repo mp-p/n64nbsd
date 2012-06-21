@@ -570,14 +570,19 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	npf_addr_t *addr, *oaddr;
 	u_int offby;
 	KASSERT(npf_iscached(npc, NPC_IP46));
+	int px = np->n_px;
 
-	uint16_t	adj;
+	uint16_t adj;
+
 	/* Calculate addjustment from propper parts of addresses.
-	 * This will be done smarter way later.
-	 */
-	adj = npf_npt_adj_calc(48, np->n_faddr, np->n_taddr);
+	 * This will be done smarter way later like this:
 
-	if (np->n_faddr == npc->npc_srcip) { /* !!! Not working simplification */
+	uint16_t adj = np->n_adj;
+
+	 */
+	adj = npf_npt_adj_calc(px, np->n_faddr, np->n_taddr);
+
+	if (npf_addr_px_eq_chk(px, np->n_faddr, npc->npc_srcip)) { 
 		/* "Forwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
@@ -590,10 +595,10 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		/* Addjustment addition. 
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
 		 */
-		npf_npt_adj_add(48, addr, adj);
+		npf_npt_adj_add(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_src);
-	} else if (np->n_taddr == npc->npc_dstip) { /* !!! Not working simplification */
+	} else if (npf_addr_px_eq_chk(px, np->n_taddr, npc->npc_dstip)) { 
 		/* "Backwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
@@ -606,7 +611,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		/* Addjustment substraction.
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
 		 */
-		npf_npt_adj_sub(48, addr, adj);
+		npf_npt_adj_sub(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_dst);
 	} else {
