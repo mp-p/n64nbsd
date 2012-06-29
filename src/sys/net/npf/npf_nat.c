@@ -568,6 +568,69 @@ npf_nat_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	}
 	return 0;
 }
+static int
+npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
+    const bool forw, const int di)
+{
+	void *n_ptr = nbuf_dataptr(nbuf);
+	npf_addr_t *addr, *oaddr;
+	u_int offby;
+	KASSERT(npf_iscached(npc, NPC_IP46));
+	int px = np->n_px;
+
+	uint16_t adj;
+
+	/* Calculate addjustment from propper parts of addresses.
+	 * This will be done smarter way later like this:
+
+	uint16_t adj = np->n_adj;
+
+	 */
+	adj = npf_npt_adj_calc(px, np->n_faddr, np->n_taddr);
+
+	if (npf_addr_px_eq_chk(px, np->n_faddr, npc->npc_srcip)) { 
+		/* "Forwards" */
+		KASSERT(
+		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
+		    (np->n_type == NPF_NATOUT && di == PFIL_OUT)
+		);
+
+		addr = npc->npc_srcip;
+		oaddr = npc->npc_srcip;
+
+		/* Addjustment addition. 
+		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
+		 */
+		npf_npt_adj_add(px, addr, adj);
+
+		offby = offsetof(struct ip, ip_src);
+	} else if (npf_addr_px_eq_chk(px, np->n_taddr, npc->npc_dstip)) { 
+		/* "Backwards" */
+		KASSERT(
+		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
+		    (np->n_type == NPF_NATOUT && di == PFIL_IN)
+		);
+
+		addr = npc->npc_dstip;
+		oaddr = npc->npc_dstip;
+
+		/* Addjustment substraction.
+		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
+		 */
+		npf_npt_adj_sub(px, addr, adj);
+
+		offby = offsetof(struct ip, ip_dst);
+	} else {
+		/* As far as I know We shouldn't be here. */
+	}
+
+	/* Advance to the adress and rewrite it. */
+	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_ipsz, addr))
+		return EINVAL;
+	/* Should We cache it? */
+	memcpy(oaddr, addr, npc->npc_ipsz);
+	return 0;
+}
 
 /*
  * npf_do_nat:
