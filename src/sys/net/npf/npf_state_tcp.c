@@ -1,7 +1,7 @@
-/*	$NetBSD: npf_state_tcp.c,v 1.4 2012/04/03 22:14:12 rmind Exp $	*/
+/*	$NetBSD: npf_state_tcp.c,v 1.7 2012/06/22 13:43:17 rmind Exp $	*/
 
 /*-
- * Copyright (c) 2010-2011 The NetBSD Foundation, Inc.
+ * Copyright (c) 2010-2012 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This material is based upon work partially supported by The
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_state_tcp.c,v 1.4 2012/04/03 22:14:12 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_state_tcp.c,v 1.7 2012/06/22 13:43:17 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -50,18 +50,11 @@ __KERNEL_RCSID(0, "$NetBSD: npf_state_tcp.c,v 1.4 2012/04/03 22:14:12 rmind Exp 
 
 #include "npf_impl.h"
 
-#if defined(_NPF_TESTING)
-void	npf_state_sample(npf_state_t *);
-#define	NPF_TCP_STATE_SAMPLE(nst)	npf_state_sample(nst)
-#else
-#define	NPF_TCP_STATE_SAMPLE(nst)
-#endif
-
 /*
  * NPF TCP states.  Note: these states are different from the TCP FSM
  * states of RFC 793.  The packet filter is a man-in-the-middle.
  */
-#define NPF_TCPS_OK		(-1)
+#define	NPF_TCPS_OK		(-1)
 #define	NPF_TCPS_CLOSED		0
 #define	NPF_TCPS_SYN_SENT	1
 #define	NPF_TCPS_SIMSYN_SENT	2
@@ -337,8 +330,9 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 	 */
 	if (__predict_false(fstate->nst_maxwin == 0)) {
 		/*
-		 * Should be first SYN or re-transmission of SYN.  State of
-		 * other side will get set with a SYN-ACK reply (see below).
+		 * Normally, it should be the first SYN or a re-transmission
+		 * of SYN.  The state of the other side will get set with a
+		 * SYN-ACK reply (see below).
 		 */
 		fstate->nst_end = end;
 		fstate->nst_maxend = end;
@@ -377,6 +371,7 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 			    wscale : 0;
 		}
 	}
+
 	if ((tcpfl & TH_ACK) == 0) {
 		/* Pretend that an ACK was sent. */
 		ack = tstate->nst_end;
@@ -389,11 +384,9 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 		end = fstate->nst_end;
 		seq = end;
 	}
-
-	NPF_TCP_STATE_SAMPLE(nst);
 #if 0
 	/* Strict in-order sequence for RST packets. */
-	if (((tcpfl & TH_RST) != 0) && (fstate->nst_end - seq) > 1) {
+	if ((tcpfl & TH_RST) != 0 && (fstate->nst_end - seq) > 1) {
 		return false;
 	}
 #endif
@@ -413,7 +406,7 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 	}
 
 	/*
-	 * Boundaries for valid acknowledgments (III, IV) - on predicted
+	 * Boundaries for valid acknowledgments (III, IV) - one predicted
 	 * window up or down, since packets may be fragmented.
 	 */
 	ackskew = tstate->nst_end - ack;
@@ -429,6 +422,7 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 	 * Negative ackskew might be due to fragmented packets.  Since the
 	 * total length of the packet is unknown - bump the boundary.
 	 */
+
 	if (ackskew < 0) {
 		tstate->nst_end = ack;
 	}
@@ -446,12 +440,18 @@ npf_tcp_inwindow(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst,
 	return true;
 }
 
+/*
+ * npf_state_tcp: inspect TCP segment, determine whether it belongs to
+ * the connection and track its state.
+ */
 bool
 npf_state_tcp(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst, int di)
 {
 	const struct tcphdr * const th = &npc->npc_l4.tcp;
 	const int tcpfl = th->th_flags, state = nst->nst_state;
 	int nstate;
+
+	KASSERT(nst->nst_state == 0 || mutex_owned(&nst->nst_lock));
 
 	/* Look for a transition to a new state. */
 	if (__predict_true((tcpfl & TH_RST) == 0)) {
@@ -463,6 +463,7 @@ npf_state_tcp(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst, int di)
 	} else {
 		nstate = NPF_TCPS_CLOSED;
 	}
+
 	/* Determine whether TCP packet really belongs to this connection. */
 	if (!npf_tcp_inwindow(npc, nbuf, nst, di)) {
 		return false;
@@ -470,6 +471,7 @@ npf_state_tcp(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst, int di)
 	if (__predict_true(nstate == NPF_TCPS_OK)) {
 		return true;
 	}
+
 	nst->nst_state = nstate;
 	return true;
 }
