@@ -568,7 +568,7 @@ npf_nat_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 }
 static int
 npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
-    const bool forw, const int di)
+    const int di)
 {
 	void *n_ptr = nbuf_dataptr(nbuf);
 	npf_addr_t *addr, *oaddr;
@@ -737,6 +737,34 @@ out:
 		}
 	}
 	return error;
+}
+
+int
+npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp)
+{
+        npf_natpolicy_t *np;
+        npf_nat_t *nt;
+        int error;
+        bool forw, new;
+
+        /* All relevant IPv4 data should be already cached. */
+        if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
+                return 0;
+        }
+
+        /*
+         * Inspect the packet for a NAT policy, if there is no session.
+         * Note: acquires the lock (releases, if not found).
+         */
+        np = npf_nat_inspect(npc, nbuf, ifp, di);
+        if (np == NULL) {
+                /* If packet does not match - done. */
+                return 0;
+        }
+
+        /* Perform the translation. */
+        error = npf_npt_translate(npc, nbuf, np, di);
+        return error;
 }
 
 /*
