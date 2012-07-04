@@ -1,4 +1,4 @@
-/*	$NetBSD: npfctl.c,v 1.12 2012/06/15 23:24:08 rmind Exp $	*/
+/*	$NetBSD: npfctl.c,v 1.14 2012/07/01 23:21:07 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: npfctl.c,v 1.12 2012/06/15 23:24:08 rmind Exp $");
+__RCSID("$NetBSD: npfctl.c,v 1.14 2012/07/01 23:21:07 rmind Exp $");
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -135,7 +135,7 @@ usage(void)
 	const char *progname = getprogname();
 
 	fprintf(stderr,
-	    "usage:\t%s [ start | stop | reload | flush | stats ]\n",
+	    "usage:\t%s [ start | stop | reload | flush | show | stats ]\n",
 	    progname);
 	fprintf(stderr,
 	    "usage:\t%s [ sess-save | sess-load ]\n",
@@ -250,8 +250,8 @@ npfctl(int action, int argc, char **argv)
 	ret = ioctl(fd, IOC_NPF_VERSION, &ver);
 	if (ver != NPF_VERSION) {
 		errx(EXIT_FAILURE,
-		    "incompatible NPF interface version (%d, kernel %d)",
-		    NPF_VERSION, ver);
+		    "incompatible NPF interface version (%d, kernel %d)\n"
+		    "Hint: update userland?", NPF_VERSION, ver);
 	}
 	switch (action) {
 	case NPFCTL_START:
@@ -338,7 +338,7 @@ main(int argc, char **argv)
 	cmd = argv[1];
 
 	if (strcmp(cmd, "debug") == 0) {
-		const char *cfg = argc > 2 ? argv[2] : "/tmp/npf.conf";
+		const char *cfg = argc > 2 ? argv[2] : "/etc/npf.conf";
 		npfctl_config_init(true);
 		npfctl_parsecfg(cfg);
 		npfctl_config_send(0);
