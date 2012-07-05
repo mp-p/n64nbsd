@@ -124,6 +124,10 @@ struct npf_natpolicy {
 	u_int			n_flags;
 	size_t			n_addr_sz;
 	npf_addr_t		n_taddr;
+	size_t			n_taddr_sz;
+	npf_addr_t		n_faddr;
+	size_t			n_faddr_sz;
+	u_int			px;
 	in_port_t		n_tport;
 };
 
