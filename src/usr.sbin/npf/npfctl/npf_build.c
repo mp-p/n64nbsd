@@ -537,6 +537,8 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 		    &am2->fam_addr, am2->fam_family);
 		npfctl_build_ncode(nat, family, &op, fopts, true);
 		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
+		npfctl_build_ncode(nat, family, &op, fopts, false);
+		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
 	} else {
 
 	assert(sd == NPFCTL_NAT_DYNAMIC);
