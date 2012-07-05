@@ -188,45 +188,70 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 
 	/* Translation type and flags. */
 	prop_dictionary_get_int32(natdict, "type", &np->n_type);
-	prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
+	if (np->n_type == 66) {	/* 66 is the NPT part */
+		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
+		cv_init(&np->n_cv, "npfnatcv");
+		LIST_INIT(&np->n_nat_list);
 
-	/* Should be exclusively either inbound or outbound NAT. */
-	if (((np->n_type == NPF_NATIN) ^ (np->n_type == NPF_NATOUT)) == 0) {
-		kmem_free(np, sizeof(npf_natpolicy_t));
-		return NULL;
-	}
-	mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
-	cv_init(&np->n_cv, "npfnatcv");
-	LIST_INIT(&np->n_nat_list);
+		/* I don't know what to do with n_addr_sz which for sanity
+		 * should be divided in to two parts (from,to). But currently
+		 * it doesn't matter - both addresses are the same length.
+		 */
 
-	/* Translation IP. */
-	obj = prop_dictionary_get(natdict, "translation-ip");
-	np->n_addr_sz = prop_data_size(obj);
-	KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
-	memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+		/* IP to which translete */
+		obj = prop_dictionary_get(natdict, "to-ip");
+		np->n_addr_sz = prop_data_size(obj);
+		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+		memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
 
-	/* Translation port (for redirect case). */
-	prop_dictionary_get_uint16(natdict, "translation-port", &np->n_tport);
+		/* IP from which translate */	
+		obj = prop_dictionary_get(natdict, "from-ip");
+		np->n_addr_sz = prop_data_size(obj);
+		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+		memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
 
-	/* Determine if port map is needed. */
-	np->n_portmap = NULL;
-	if ((np->n_flags & NPF_NAT_PORTMAP) == 0) {
-		/* No port map. */
-		return np;
-	}
-
-	/*
-	 * Inspect NAT policies in the ruleset for port map sharing.
-	 * Note that npf_ruleset_sharepm() will increase the reference count.
-	 */
-	if (!npf_ruleset_sharepm(nrlset, np)) {
-		/* Allocate a new port map for the NAT policy. */
-		pm = kmem_zalloc(PORTMAP_MEM_SIZE, KM_SLEEP);
-		pm->p_refcnt = 1;
-		KASSERT((uintptr_t)pm->p_bitmap == (uintptr_t)pm + sizeof(*pm));
-		np->n_portmap = pm;
+		prop_dictionary_get_uint16(natdict, "prefix", &np->n_px);
 	} else {
-		KASSERT(np->n_portmap != NULL);
+		prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
+
+		/* Should be exclusively either inbound or outbound NAT. */
+		if (((np->n_type == NPF_NATIN) ^ (np->n_type == NPF_NATOUT)) == 0) {
+			kmem_free(np, sizeof(npf_natpolicy_t));
+			return NULL;
+		}
+		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
+		cv_init(&np->n_cv, "npfnatcv");
+		LIST_INIT(&np->n_nat_list);
+
+		/* Translation IP. */
+		obj = prop_dictionary_get(natdict, "translation-ip");
+		np->n_addr_sz = prop_data_size(obj);
+		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+		memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+
+		/* Translation port (for redirect case). */
+		prop_dictionary_get_uint16(natdict, "translation-port", &np->n_tport);
+
+		/* Determine if port map is needed. */
+		np->n_portmap = NULL;
+		if ((np->n_flags & NPF_NAT_PORTMAP) == 0) {
+			/* No port map. */
+			return np;
+		}
+
+		/*
+		 * Inspect NAT policies in the ruleset for port map sharing.
+		 * Note that npf_ruleset_sharepm() will increase the reference count.
+		 */
+		if (!npf_ruleset_sharepm(nrlset, np)) {
+			/* Allocate a new port map for the NAT policy. */
+			pm = kmem_zalloc(PORTMAP_MEM_SIZE, KM_SLEEP);
+			pm->p_refcnt = 1;
+			KASSERT((uintptr_t)pm->p_bitmap == (uintptr_t)pm + sizeof(*pm));
+			np->n_portmap = pm;
+		} else {
+			KASSERT(np->n_portmap != NULL);
+		}
 	}
 	return np;
 }
@@ -566,6 +591,7 @@ npf_nat_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	}
 	return 0;
 }
+
 static int
 npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
     const int di)
