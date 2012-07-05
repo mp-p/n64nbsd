@@ -573,14 +573,14 @@ npf_static_nat_create(int type, u_int if_idx
 		npf_rule_destroy(rl);
 		return NULL;
 	}
-	prop_dictionary_set(rldict, "from_ip", from_ip);
+	prop_dictionary_set(rldict, "from-ip", from_ip);
 	prop_object_release(addrdat);
 	addrdat = prop_data_create_data(to_ip, sz);
 	if (addrdat == NULL) {
 		npf_rule_destroy(rl);
 		return NULL;
 	}
-	prop_dictionary_set(rldict, "to_ip" to_ip);
+	prop_dictionary_set(rldict, "to-ip" to_ip);
 	prop_object_release(addrdat);
 
 	px = 48; /* XXX Just for tests!!! */
