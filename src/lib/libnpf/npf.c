@@ -540,8 +540,9 @@ npf_nat_create(int type, u_int flags, u_int if_idx,
 }
 
 nl_nat_t *
-npf_static_nat_create(int type, u_int flags, u_int if_idx
-    npf_addr_t *from_ip, int from_af, npf_addr_t *to_ip, int to_af)
+npf_static_nat_create(int type, u_int if_idx
+    npf_addr_t *from_ip, int from_af,
+    npf_addr_t *to_ip, int to_af)
 {
 	nl_rule_t *rl;
 	prop_dictionary_t rldict;
@@ -565,7 +566,7 @@ npf_static_nat_create(int type, u_int flags, u_int if_idx
 	}
 	rldict = rl->nrl_dict;
 
-	prop_dictionary_set_int32(rldict, "type", 66);
+	prop_dictionary_set_int32(rldict, "type", type);
 
 	addrdat = prop_data_create_data(from_ip, sz);
 	if (addrdat == NULL) {
