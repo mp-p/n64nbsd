@@ -281,9 +281,17 @@ map
 	}
 	| MAP ifindex map_sd mapseg map_type mapseg
 	{
-		npfctl_build_nat(NPFCTL_RDR, $2, &$3, $5, $6);
+		npfctl_build_nat($3, $5, $2, &$4, $6, NULL);
 	}
-	;
+/*
+	This might be used later for differentiation of maping types
+	currently use map_sd==NPFCTL_NAT_STATIC as NPT synonim
+
+	| MAP ifindex map_sd NPT map_type mapseg filt_opts
+	{
+		npfctl_builf_nat($3, $5, $2, &$4, &$6, &$8);
+	}
+*/	;
 
 rproc
 	: PROCEDURE STRING CURLY_OPEN procs CURLY_CLOSE
