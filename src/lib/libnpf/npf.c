@@ -540,7 +540,7 @@ npf_nat_create(int type, u_int flags, u_int if_idx,
 }
 
 nl_nat_t *
-npf_static_nat_create(int type, u_int if_idx
+npf_static_nat_create(int type, u_int if_idx,
     npf_addr_t *from_ip, int from_af,
     npf_addr_t *to_ip, int to_af)
 {
