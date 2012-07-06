@@ -546,7 +546,7 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 {
 	nl_rule_t *rl;
 	prop_dictionary_t rldict;
-	prop_data_t	addrdata;
+	prop_data_t	addrdat;
 	uint32_t	px, attr;
 	size_t	sz;
 
@@ -581,7 +581,7 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 		npf_rule_destroy(rl);
 		return NULL;
 	}
-	prop_dictionary_set(rldict, "to-ip" to_ip);
+	prop_dictionary_set(rldict, "to-ip", to_ip);
 	prop_object_release(addrdat);
 
 	px = 48; /* XXX Just for tests!!! */
