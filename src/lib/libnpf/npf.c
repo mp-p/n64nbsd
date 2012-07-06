@@ -547,7 +547,7 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	nl_rule_t *rl;
 	prop_dictionary_t rldict;
 	prop_data_t	addrdata;
-	uint32_t	px;
+	uint32_t	px, attr;
 	size_t	sz;
 
 	if (to_af == AF_INET || from_af == AF_INET) {
