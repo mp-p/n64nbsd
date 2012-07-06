@@ -478,7 +478,7 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
     const addr_port_t *ap2, const filt_opts_t *fopts)
 {
 	const opt_proto_t op = { .op_proto = -1, .op_opts = NULL };
-	fam_addr_mask_t *am1, am2;
+	fam_addr_mask_t *am1 = NULL, *am2 = NULL;
 	filt_opts_t imfopts;
 	sa_family_t family;
 	nl_nat_t *nat;
@@ -493,7 +493,7 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 		 */
 		assert(if_idx != 0);
 		family = AF_INET6;
-		if (type & NPT_NATIN) {
+		if (type & NPF_NATIN) {
        			if (!ap1->ap_netaddr) {
 				yyerror("inbound network segment is not specified");
 			}
@@ -537,9 +537,8 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 		    &am2->fam_addr, am2->fam_family);
 		npfctl_build_ncode(nat, family, &op, fopts, true);
 		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
-		npfctl_build_ncode(nat, family, &op, fopts, false);
-		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
-	} else {
+		goto end;
+	}
 
 	assert(sd == NPFCTL_NAT_DYNAMIC);
 	assert(if_idx != 0);
@@ -602,9 +601,9 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 	default:
 		assert(false);
 	}
+end:
 	npfctl_build_ncode(nat, family, &op, fopts, false);
 	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
-	} /* else */
 }
 
 /*
