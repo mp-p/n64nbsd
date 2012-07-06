@@ -262,8 +262,8 @@ map_sd
 
 map_type
 	: ARROWBOTH	{ $$ = NPF_NATIN | NPF_NATOUT; }
-	: ARROWLEFT	{ $$ = NPF_NATIN; }
-	: ARROWRIGHT	{ $$ = NPF_NATOUT; }
+	| ARROWLEFT	{ $$ = NPF_NATIN; }
+	| ARROWRIGHT	{ $$ = NPF_NATOUT; }
 	;
 
 mapseg
