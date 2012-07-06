@@ -281,7 +281,7 @@ map
 	}
 	| MAP ifindex map_sd mapseg map_type mapseg
 	{
-		npfctl_build_nat($3, $5, $2, &$4, $6, NULL);
+		npfctl_build_nat($3, $5, $2, &$4, &$6, NULL);
 	}
 /*
 	This might be used later for differentiation of maping types
