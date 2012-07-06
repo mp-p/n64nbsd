@@ -551,7 +551,7 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	size_t	sz;
 
 	if (to_af == AF_INET || from_af == AF_INET) {
-		yyerror("NOOOOO!!! We shouldn't be here...");
+		return NULL;
 	}
 
 	sz = sizeof(struct in6_addr);
