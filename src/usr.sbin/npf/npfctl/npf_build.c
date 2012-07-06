@@ -532,7 +532,7 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 		/*
 		 * 66 below is to tell everyone that we have NPT translation.
 		 */
-		nat = npf_static_nat_create(NPF_NATIN, 66, if_idx,
+		nat = npf_static_nat_create(type, 66, if_idx,
 		    &am1->fam_addr, am1->fam_family
 		    &am2->fam_addr, am2->fam_family);
 		npfctl_build_ncode(nat, family, &op, fopts, true);
