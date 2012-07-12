@@ -483,71 +483,34 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 	sa_family_t family;
 	nl_nat_t *nat;
 
-	if (sd == NPFCTL_NAT_STATIC) {
-		/* yyerror("static NAT is not yet supported");
-		 * So we are here and we would like to do NPT
-		 * ;-)
-		 *
-		 * doing the same as for normal nat should do
-		 * the trick...
-		 */
-		assert(if_idx != 0);
-		family = AF_INET6;
-		if (type & NPF_NATIN) {
-       			if (!ap1->ap_netaddr) {
-				yyerror("inbound network segment is not specified");
-			}
-			am1 = npfctl_get_singlefam(ap1->ap_netaddr);
-			if (am1->fam_family != family) {
-				yyerror("IPv4 static NAT is not supported");
-			}
-			assert(am1 != NULL);
-		}
-
-		if (type & NPF_NATOUT) {
-                	if (!ap2->ap_netaddr) {
-                	        yyerror("outbound network segment is not specified");
-                	}
-			am2 = npfctl_get_singlefam(ap2->ap_netaddr);
-			if (am2->fam_family != family) {
-				yyerror("IPv4 static NAT is not supported");
-                	}
-			assert(am2 != NULL);
-		}
-		/*
-		 * If filter criteria is not specified explicitly, apply implicit
-		 * filtering according to the given network segements.
-		 */
-		if (!fopts) {
-			memset(&imfopts, 0, sizeof(filt_opts_t));
-			if (type & NPF_NATOUT) {
-				memcpy(&imfopts.fo_from, ap1, sizeof(addr_port_t));
-			}
-			if (type & NPF_NATIN) {
-			memcpy(&imfopts.fo_to, ap2, sizeof(addr_port_t));
-			}
-			fopts = &imfopts;
-        	}
-
-		/*
-		 * 66 below is to tell everyone that we have NPT translation.
-		 */
-		nat = npf_static_nat_create(type, 66, if_idx,
-		    &am1->fam_addr, am1->fam_family,
-		    &am2->fam_addr, am2->fam_family);
-		npfctl_build_ncode(nat, family, &op, fopts, true);
-		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
-		goto end;
-	}
-
-	assert(sd == NPFCTL_NAT_DYNAMIC);
 	assert(if_idx != 0);
 
-	family = AF_INET;
+	if (sd == NPFCTL_NAT_STATIC) {
+		family = AF_INET6; /* We are going to do NPT then */
+	} else {
+		family = AF_INET;
+	}
+
+	if (type & NPF_NATIN) {
+		if (!ap1->ap_netaddr) {
+			yyerror("inbound network segment is not specified");
+		}
+		am1 = npfctl_get_singlefam(ap1->ap_netaddr);
+		assert(am1 != NULL);
+	}
+	if (type & NPF_NATOUT) {
+               	if (!ap2->ap_netaddr) {
+               	        yyerror("outbound network segment is not specified");
+               	}
+		am2 = npfctl_get_singlefam(ap2->ap_netaddr);
+		assert(am2 != NULL);
+	}
+
 	/*
 	 * If filter criteria is not specified explicitly, apply implicit
 	 * filtering according to the given network segements.
 	 */
+
 	if (!fopts) {
 		memset(&imfopts, 0, sizeof(filt_opts_t));
 		if (type & NPF_NATOUT) {
@@ -557,51 +520,62 @@ npfctl_build_nat(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 			memcpy(&imfopts.fo_to, ap2, sizeof(addr_port_t));
 		}
 		fopts = &imfopts;
-        }
+       	}
 
-	switch(type) {
-	case NPF_NATIN:
-		assert(am1 != NULL);
+	if (sd == NPFCTL_NAT_STATIC) {
 		/*
-		 * Redirection: an inbound NAT with a specific port.
+		 * 66 below is to tell everyone that we have NPT translation.
 		 */
-		if (!ap1->ap_portrange) {
-			yyerror("inbound port is not specified");
-		}
-		in_port_t port = npfctl_get_singleport(ap1->ap_portrange);
-		nat = npf_nat_create(NPF_NATIN, NPF_NAT_PORTS,
-		    if_idx, &am1->fam_addr, am1->fam_family, port);
-		break;
-
-	case (NPF_NATIN | NPF_NATOUT):
-		assert(am1 != NULL);
-		/*
-		 * Bi-directional NAT: a combination of inbound NAT and
-		 * outbound NAT policies.  Note that the translation address
-		 * is local IP and filter criteria is inverted accordingly.
-		 */
-		nat = npf_nat_create(NPF_NATIN, 0, if_idx,
-		    &am1->fam_addr, am1->fam_family, 0);
+		nat = npf_static_nat_create(type, 66, if_idx,
+		    &am1->fam_addr, am1->fam_family,
+		    &am2->fam_addr, am2->fam_family);
 		npfctl_build_ncode(nat, family, &op, fopts, true);
 		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
-		/* FALLTHROUGH */
+	} else {
+		switch (type) {
+		case NPF_NATIN:
+			assert(ap1 != NULL);
+			/*
+			 * Redirection: an inbound NAT with a specific port.
+			 */
+			if (!ap1->ap_portrange) {
+				yyerror("inbound port is not specified");
+			}
+			in_port_t port = npfctl_get_singleport(ap1->ap_portrange);
+			nat = npf_nat_create(NPF_NATIN, NPF_NAT_PORTS,
+			    if_idx, &am1->fam_addr, am1->fam_family, port);
+			break;
 
-	case NPF_NATOUT:
-		assert(am2 != NULL);
-		/*
-		 * Traditional NAPT: an outbound NAT policy with port.
-		 * If this is another half for bi-directional NAT, then
-		 * no port translation with mapping.
-		 */
-		nat = npf_nat_create(NPF_NATOUT, type == NPF_NATOUT ?
-		    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
-		    if_idx, &am2->fam_addr, am2->fam_family, 0);
-		break;
+		case (NPF_NATIN | NPF_NATOUT):
+			assert(ap1 != NULL);
+			/*
+			 * Bi-directional NAT: a combination of inbound NAT and
+			 * outbound NAT policies.  Note that the translation address
+			 * is local IP and filter criteria is inverted accordingly.
+			 */
+			nat = npf_nat_create(NPF_NATIN, 0, if_idx,
+			    &am1->fam_addr, am1->fam_family, 0);
+			npfctl_build_ncode(nat, family, &op, fopts, true);
+			npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
+			/* FALLTHROUGH */
 
-	default:
-		assert(false);
+		case NPF_NATOUT:
+			assert(am2 != NULL);
+			/*
+			 * Traditional NAPT: an outbound NAT policy with port.
+			 * If this is another half for bi-directional NAT, then
+			 * no port translation with mapping.
+			 */
+			nat = npf_nat_create(NPF_NATOUT, type == NPF_NATOUT ?
+			    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
+			    if_idx, &am2->fam_addr, am2->fam_family, 0);
+			break;
+
+		default:
+			assert(false);
+		}
 	}
-end:
+
 	npfctl_build_ncode(nat, family, &op, fopts, false);
 	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
 }
