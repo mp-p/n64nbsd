@@ -610,15 +610,15 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	 */
 	adj = npf_npt_adj_calc(px, &np->n_faddr, &np->n_taddr);
 
-	if (npf_addr_px_eq_chk(px, &np->n_faddr, &npc->npc_srcip)) { 
+	if (npf_addr_px_eq_chk(px, &np->n_faddr, npc->npc_srcip)) { 
 		/* "Forwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
 		    (np->n_type == NPF_NATOUT && di == PFIL_OUT)
 		);
 
-		addr = &npc->npc_srcip;
-		oaddr = &npc->npc_srcip;
+		addr = npc->npc_srcip;
+		oaddr = npc->npc_srcip;
 
 		/* Addjustment addition. 
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
@@ -626,15 +626,15 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		npf_npt_adj_add(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_src);
-	} else if (npf_addr_px_eq_chk(px, &np->n_taddr, &npc->npc_dstip)) { 
+	} else if (npf_addr_px_eq_chk(px, &np->n_taddr, npc->npc_dstip)) { 
 		/* "Backwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
 		    (np->n_type == NPF_NATOUT && di == PFIL_IN)
 		);
 
-		addr = &npc->npc_dstip;
-		oaddr = &npc->npc_dstip;
+		addr = npc->npc_dstip;
+		oaddr = npc->npc_dstip;
 
 		/* Addjustment substraction.
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
