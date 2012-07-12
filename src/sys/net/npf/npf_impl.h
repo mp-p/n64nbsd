@@ -191,8 +191,8 @@ void		npf_addr_mask(const npf_addr_t *, const npf_netmask_t,
 /* NPT adjustment calculation functions */
 uint16_t	npf_npt_adj_calc(const int, const npf_addr_t *, const npf_addr_t *);
 void		npf_npt_adj_add(int, npf_addr_t *, uint16_t);
-void		npf_npt_adj_sub(int, npf_addr_t *, uint16_t)
-bool		npf_addr_px_eq_chk(int px, npf_addr_t *, npf_addr_t *)
+void		npf_npt_adj_sub(int, npf_addr_t *, uint16_t);
+bool		npf_addr_px_eq_chk(int px, npf_addr_t *, npf_addr_t *);
 
 int		npf_tcpsaw(const npf_cache_t *, tcp_seq *, tcp_seq *,
 		    uint32_t *);
