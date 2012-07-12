@@ -300,7 +300,7 @@ bool		npf_nat_sharepm(npf_natpolicy_t *, npf_natpolicy_t *);
 
 int		npf_do_nat(npf_cache_t *, npf_session_t *, nbuf_t *,
 		    ifnet_t *, const int);
-int		npf_do_npt(npf_cache_t *, nbuf_t *, ifnet_t *);
+int		npf_do_npt(npf_cache_t *, nbuf_t *, ifnet_t *, const int);
 void		npf_nat_expire(npf_nat_t *);
 void		npf_nat_getorig(npf_nat_t *, npf_addr_t **, in_port_t *);
 void		npf_nat_gettrans(npf_nat_t *, npf_addr_t **, in_port_t *);

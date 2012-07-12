@@ -764,7 +764,7 @@ out:
 }
 
 int
-npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp)
+npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp, const int di)
 {
         npf_natpolicy_t *np;
         npf_nat_t *nt;
