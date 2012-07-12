@@ -532,7 +532,6 @@ npf_fetch_tcp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 bool
 npf_fetch_udp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 {
-	struct ip *ip = &npc->npc_ip.v4;
 	struct udphdr *uh;
 	u_int hlen;
 
@@ -540,7 +539,7 @@ npf_fetch_udp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 	if (!npf_iscached(npc, NPC_IP46) && !npf_fetch_ip(npc, nbuf, n_ptr)) {
 		return false;
 	}
-	if (ip->ip_p != IPPROTO_UDP) {
+	if (npf_cache_ipproto(npc) != IPPROTO_UDP) {
 		return false;
 	}
 	uh = &npc->npc_l4.udp;
@@ -562,7 +561,6 @@ npf_fetch_udp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 bool
 npf_fetch_icmp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 {
-	struct ip *ip = &npc->npc_ip.v4;
 	struct icmp *ic;
 	u_int hlen, iclen;
 
@@ -570,7 +568,8 @@ npf_fetch_icmp(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr)
 	if (!npf_iscached(npc, NPC_IP46) && !npf_fetch_ip(npc, nbuf, n_ptr)) {
 		return false;
 	}
-	if (ip->ip_p != IPPROTO_ICMP) {
+	if (npf_cache_ipproto(npc) != IPPROTO_ICMP &&
+	    npf_cache_ipproto(npc) != IPPROTO_ICMPV6) {
 		return false;
 	}
 	ic = &npc->npc_l4.icmp;
