@@ -289,8 +289,8 @@ npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
 	bc = sc << 3;
 
 	while (px > bc) {
-		if ((a1->s6_addr[sc] << bc) & 64 \
-		    == (a2->s6_addr[sc] << bc) & 64) {
+		if (((a1->s6_addr[sc] << bc) & 64) \
+		    == ((a2->s6_addr[sc] << bc) & 64)) {
 			bc++;
 			continue;
 		} else {
