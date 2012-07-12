@@ -244,7 +244,7 @@ npf_npt_adj_sub(int px, npf_addr_t *a, uint16_t adj)
  * parts are equal.
  */
 bool
-npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t a2)
+npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
 {
 	uint8_t dw = px >> 4, dc = 0;
 	uint8_t sw = dw << 4 - px >> 3, sc;
