@@ -127,7 +127,7 @@ struct npf_natpolicy {
 	size_t			n_taddr_sz;
 	npf_addr_t		n_faddr;
 	size_t			n_faddr_sz;
-	u_int			n_px;
+	uint8_t			n_px;
 	in_port_t		n_tport;
 };
 
@@ -214,7 +214,7 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
 		memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
 
-		prop_dictionary_get_uint16(natdict, "prefix", &np->n_px);
+		prop_dictionary_get_uint8(natdict, "prefix", &np->n_px);
 	} else {
 		prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
 
@@ -598,7 +598,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	npf_addr_t *addr, *oaddr;
 	u_int offby;
 	KASSERT(npf_iscached(npc, NPC_IP46));
-	int px = np->n_px;
+	uint8_t px = np->n_px;
 
 	uint16_t adj;
 
@@ -608,17 +608,17 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	uint16_t adj = np->n_adj;
 
 	 */
-	adj = npf_npt_adj_calc(px, np->n_faddr, np->n_taddr);
+	adj = npf_npt_adj_calc(px, &np->n_faddr, &np->n_taddr);
 
-	if (npf_addr_px_eq_chk(px, np->n_faddr, npc->npc_srcip)) { 
+	if (npf_addr_px_eq_chk(px, &np->n_faddr, &npc->npc_srcip)) { 
 		/* "Forwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
 		    (np->n_type == NPF_NATOUT && di == PFIL_OUT)
 		);
 
-		addr = npc->npc_srcip;
-		oaddr = npc->npc_srcip;
+		addr = &npc->npc_srcip;
+		oaddr = &npc->npc_srcip;
 
 		/* Addjustment addition. 
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
@@ -626,15 +626,15 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		npf_npt_adj_add(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_src);
-	} else if (npf_addr_px_eq_chk(px, np->n_taddr, npc->npc_dstip)) { 
+	} else if (npf_addr_px_eq_chk(px, &np->n_taddr, &npc->npc_dstip)) { 
 		/* "Backwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
 		    (np->n_type == NPF_NATOUT && di == PFIL_IN)
 		);
 
-		addr = npc->npc_dstip;
-		oaddr = npc->npc_dstip;
+		addr = &npc->npc_dstip;
+		oaddr = &npc->npc_dstip;
 
 		/* Addjustment substraction.
 		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
@@ -644,7 +644,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		offby = offsetof(struct ip, ip_dst);
 	} else {
 		/* As far as I know We shouldn't be here. */
-	}
+}
 
 	/* Advance to the adress and rewrite it. */
 	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_ipsz, addr))
@@ -767,9 +767,7 @@ int
 npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp, const int di)
 {
         npf_natpolicy_t *np;
-        npf_nat_t *nt;
         int error;
-        bool forw, new;
 
         /* All relevant IPv4 data should be already cached. */
         if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
