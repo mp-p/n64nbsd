@@ -127,7 +127,7 @@ struct npf_natpolicy {
 	size_t			n_taddr_sz;
 	npf_addr_t		n_faddr;
 	size_t			n_faddr_sz;
-	u_int			px;
+	u_int			n_px;
 	in_port_t		n_tport;
 };
 
