@@ -567,6 +567,9 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	rldict = rl->nrl_dict;
 
 	prop_dictionary_set_int32(rldict, "type", type);
+	/*
+	 *	I'm using map_type == 66 for this...
+	 */
 	prop_dictionary_set_int32(rldict, "map-type", map_type);
 
 	addrdat = prop_data_create_data(from_ip, sz);
@@ -585,9 +588,6 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	prop_object_release(addrdat);
 
 	px = 48; /* XXX Just for tests!!! */
-	/*
-	 *	I'm using type == 66 for this...
-	 */
 	prop_dictionary_set_uint32(rldict, "prefix", px);
 	/*
 	 * Just not for now...
