@@ -257,21 +257,23 @@ npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
 	sw = (dw << 4) - (px >> 3);
 
 	while (dw > dc) {
-		if (a1->s6_addr16[dc] == a2->s6_addr16[dc])
+		if (a1->s6_addr16[dc] == a2->s6_addr16[dc]) {
 			dc++;
 			continue;
-		else
+		} else {
 			return false;
+		}
 	}
 
 	sc = dc << 1;
 
 	while (sw > sc) {
-		if (a1->s6_addr[sc] == a2->s6_addr[sc])
+		if (a1->s6_addr[sc] == a2->s6_addr[sc]) {
 			sc++;
 			continue;
-		else
+		} else {
 			return false;
+		}
 	}
 
 /*
@@ -291,8 +293,9 @@ npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
 		    == (a2->s6_addr[sc] << bc) & 64) {
 			bc++;
 			continue;
-		} else
+		} else {
 			return false;
+		}
 	}
 
 	return true;
