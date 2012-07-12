@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_mbuf_subr.c,v 1.2 2012/05/30 21:38:04 rmind Exp $	*/
+/*	$NetBSD$	*/
 
 /*
  * NPF testing - helper routines.

@@ -56,15 +56,6 @@ npf_table_test(bool verbose)
 	assert(error == 0);
 
 	/* Attempt to match non-existing entries - should fail. */
-	addr->s6_addr32[0] = inet_addr(ip_list[0]);
-
-	error = npf_table_match_addr(tblset, HASH_TID, addr);
-	assert(error != 0);
-
-	error = npf_table_match_addr(tblset, TREE_TID, addr);
-	assert(error != 0);
-
-	/* Attempt to match non-existing entries - should fail. */
 	memset(addr, 0, sizeof(npf_addr_t));
 	addr->s6_addr32[0] = inet_addr(ip_list[0]);
 

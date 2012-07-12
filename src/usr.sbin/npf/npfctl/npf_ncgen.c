@@ -47,9 +47,6 @@ __RCSID("$NetBSD: npf_ncgen.c,v 1.11 2012/07/01 23:21:07 rmind Exp $");
 /* Reduce re-allocations by expanding in 64 byte blocks. */
 #define	NC_ALLOC_MASK		(64 - 1)
 #define	NC_ALLOC_ROUND(x)	(((x) + NC_ALLOC_MASK) & ~NC_ALLOC_MASK)
-#define NPF_OPCODE_PROTO	0x81 /*XXX this is just to speed up bug hunt.
-				       Should be removed later.
-				      */
 
 struct nc_ctx {
 	/*

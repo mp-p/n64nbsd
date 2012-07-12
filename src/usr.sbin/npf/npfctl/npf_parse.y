@@ -270,7 +270,7 @@ mapseg
 	: addr_or_iface port_range
 	{
 		$$.ap_netaddr = $1;
-		$$.ap_portrange = $2;	
+		$$.ap_portrange = $2;
 	}
 	;
 
