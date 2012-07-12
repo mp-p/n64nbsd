@@ -93,6 +93,7 @@ bool		npf_rproc_exists_p(nl_config_t *, const char *);
 int		npf_rproc_insert(nl_config_t *, nl_rproc_t *);
 
 nl_nat_t *	npf_nat_create(int, u_int, u_int, npf_addr_t *, int, in_port_t);
+nl_nat_t *	npf_static_nat_create(int, int, u_int, npf_addr_t *, int, npf_addr_t *, int);
 int		npf_nat_insert(nl_config_t *, nl_nat_t *, pri_t);
 
 nl_table_t *	npf_table_create(u_int, int);

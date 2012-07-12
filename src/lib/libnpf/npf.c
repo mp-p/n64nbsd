@@ -539,6 +539,64 @@ npf_nat_create(int type, u_int flags, u_int if_idx,
 	return (nl_nat_t *)rl;
 }
 
+nl_nat_t *
+npf_static_nat_create(int type, int map_type, u_int if_idx,
+    npf_addr_t *from_ip, int from_af,
+    npf_addr_t *to_ip, int to_af)
+{
+	nl_rule_t *rl;
+	prop_dictionary_t rldict;
+	prop_data_t	addrdat;
+	uint32_t	px, attr;
+	size_t	sz;
+
+	if (to_af == AF_INET || from_af == AF_INET) {
+		return NULL;
+	}
+
+	sz = sizeof(struct in6_addr);
+
+	attr = NPF_RULE_PASS | NPF_RULE_FINAL |
+	    (type == NPF_NATOUT ? NPF_RULE_OUT : NPF_RULE_IN);
+
+	/* Create a rule for NAT policy.  Next, will add translation data. */
+	rl = npf_rule_create(NULL, attr, if_idx);
+	if (rl == NULL) {
+		return NULL;
+	}
+	rldict = rl->nrl_dict;
+
+	prop_dictionary_set_int32(rldict, "type", type);
+	prop_dictionary_set_int32(rldict, "map-type", map_type);
+
+	addrdat = prop_data_create_data(from_ip, sz);
+	if (addrdat == NULL) {
+		npf_rule_destroy(rl);
+		return NULL;
+	}
+	prop_dictionary_set(rldict, "from-ip", from_ip);
+	prop_object_release(addrdat);
+	addrdat = prop_data_create_data(to_ip, sz);
+	if (addrdat == NULL) {
+		npf_rule_destroy(rl);
+		return NULL;
+	}
+	prop_dictionary_set(rldict, "to-ip", to_ip);
+	prop_object_release(addrdat);
+
+	px = 48; /* XXX Just for tests!!! */
+	/*
+	 *	I'm using type == 66 for this...
+	 */
+	prop_dictionary_set_uint32(rldict, "prefix", px);
+	/*
+	 * Just not for now...
+	prop_dictionary_set_uint32(rldict, "adjustment", adj);
+	 */
+
+	return (nl_nat_t *)rl;
+}
+
 int
 npf_nat_insert(nl_config_t *ncf, nl_nat_t *nt, pri_t pri)
 {

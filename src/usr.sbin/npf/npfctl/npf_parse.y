@@ -132,10 +132,10 @@ yyerror(const char *fmt, ...)
 %token	<str>		TABLE_ID
 %token	<str>		VAR_ID
 
-%type	<str>		addr, iface_name, moduleargname, list_elem, table_store
+%type	<str>		addr, some_name, list_elem, table_store
 %type	<str>		opt_apply
-%type	<num>		ifindex, port, opt_final, on_iface, prefix_len
-%type	<num>		block_or_pass, rule_dir, block_opts, family, opt_family
+%type	<num>		ifindex, port, opt_final, on_iface
+%type	<num>		block_or_pass, rule_dir, block_opts, opt_family
 %type	<num>		opt_stateful, icmp_type, table_type, map_sd, map_type
 %type	<var>		addr_or_iface, port_range, icmp_type_and_code
 %type	<var>		filt_addr, addr_and_mask, tcp_flags, tcp_flags_and_mask
@@ -262,8 +262,8 @@ map_sd
 
 map_type
 	: ARROWBOTH	{ $$ = NPF_NATIN | NPF_NATOUT; }
-	: ARROWLEFT	{ $$ = NPF_NATIN; }
-	: ARROWRIGHT	{ $$ = NPF_NATOUT; }
+	| ARROWLEFT	{ $$ = NPF_NATIN; }
+	| ARROWRIGHT	{ $$ = NPF_NATOUT; }
 	;
 
 mapseg
@@ -281,9 +281,17 @@ map
 	}
 	| MAP ifindex map_sd mapseg map_type mapseg
 	{
-		npfctl_build_nat(NPFCTL_RDR, $2, &$3, $5, $6);
+		npfctl_build_nat($3, $5, $2, &$4, &$6, NULL);
 	}
-	;
+/*
+	This might be used later for differentiation of maping types
+	currently use map_sd==NPFCTL_NAT_STATIC as NPT synonim
+
+	| MAP ifindex map_sd NPT map_type mapseg filt_opts
+	{
+		npfctl_builf_nat($3, $5, $2, &$4, &$6, &$8);
+	}
+*/	;
 
 rproc
 	: PROCEDURE STRING CURLY_OPEN procs CURLY_CLOSE

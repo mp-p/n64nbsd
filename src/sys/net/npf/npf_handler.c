@@ -201,7 +201,11 @@ pass:
 	/*
 	 * Perform NAT.
 	 */
-	error = npf_do_nat(&npc, se, nbuf, ifp, di);
+	if ((retfl & NPF_RULE_STATEFUL) == 0 && !se) {
+		error = npf_do_npt(&npc, nbuf, ifp, di);
+	} else {
+		error = npf_do_nat(&npc, se, nbuf, ifp, di);
+	}
 block:
 	/*
 	 * Execute rule procedure, if any.
