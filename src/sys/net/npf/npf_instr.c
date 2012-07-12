@@ -153,11 +153,6 @@ npf_match_ipmask(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr,
 	if (npc->npc_ipsz != alen) {
 		return -1;
 	}
-	addr = sd ? npc->npc_srcip : npc->npc_dstip;
-	if (mask != NPF_NO_NETMASK) {
-		npf_addr_mask(addr, mask, &cmpaddr);
-		addr = &cmpaddr;
-	}
 	addr = (szsd & 0x1) ? npc->npc_srcip : npc->npc_dstip;
 	return npf_addr_cmp(maddr, NPF_NO_NETMASK, addr, mask, alen) ? -1 : 0;
 }

@@ -302,12 +302,6 @@ npf_nat_freealg(npf_alg_t *alg)
 	(void)alg; /* TODO */
 }
 
-void
-npf_nat_freealg(npf_alg_t *alg)
-{
-	(void)alg; /* TODO */
-}
-
 /*
  * npf_nat_matchpolicy: compare two NAT policies.
  *

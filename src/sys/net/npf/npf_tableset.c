@@ -165,7 +165,7 @@ table_rbtree_cmp_nodes(void *ctx, const void *n1, const void *n2)
 	const npf_tblent_t * const te2 = n2;
 
 	return npf_addr_cmp(&te1->te_addr, te1->te_mask,
-	    &te2->te_addr, te2->te_mask);
+	    &te2->te_addr, te2->te_mask, sizeof(npf_addr_t));
 }
 
 static signed int
@@ -355,7 +355,7 @@ npf_table_add_cidr(npf_tableset_t *tset, u_int tid,
 		return EINVAL;
 	}
 	ent = pool_cache_get(tblent_cache, PR_WAITOK);
-	memcpy(&e->te_addr, addr, sizeof(npf_addr_t));
+	memcpy(&ent->te_addr, addr, sizeof(npf_addr_t));
 	ent->te_mask = mask;
 
 	/* Get the table (acquire the lock). */
@@ -486,7 +486,7 @@ npf_table_match_addr(npf_tableset_t *tset, u_int tid, const npf_addr_t *addr)
 		htbl = table_hash_bucket(t, addr, sizeof(npf_addr_t));
 		LIST_FOREACH(ent, htbl, te_entry.hashq) {
 			if (npf_addr_cmp(addr, ent->te_mask, &ent->te_addr,
-			    NPF_NO_NETMASK) == 0) {
+			    NPF_NO_NETMASK, sizeof(npf_addr_t)) == 0) {
 				break;
 			}
 		}

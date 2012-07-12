@@ -1,4 +1,4 @@
-/*     $NetBSD: npf_state_tcp.c,v 1.8 2012/07/01 18:13:51 rmind Exp $  */
+/*	$NetBSD: npf_state_tcp.c,v 1.8 2012/07/01 18:13:51 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2010-2012 The NetBSD Foundation, Inc.
@@ -61,9 +61,9 @@ __KERNEL_RCSID(0, "$NetBSD: npf_state_tcp.c,v 1.8 2012/07/01 18:13:51 rmind Exp 
 #define	NPF_TCPS_SYN_RECEIVED	3
 #define	NPF_TCPS_ESTABLISHED	4
 #define	NPF_TCPS_FIN_SENT	5
-#define	NPF_TCPS_CLOSE_RECEIVED	6
+#define	NPF_TCPS_FIN_RECEIVED	6
 #define	NPF_TCPS_CLOSE_WAIT	7
-#define NPT_TCPS_FIN_WAIT	8
+#define	NPF_TCPS_FIN_WAIT	8
 #define	NPF_TCPS_CLOSING	9
 #define	NPF_TCPS_LAST_ACK	10
 #define	NPF_TCPS_TIME_WAIT	11
@@ -86,8 +86,8 @@ static u_int npf_tcp_timeouts[] __read_mostly = {
 	[NPF_TCPS_FIN_SENT]	= 60 * 2 * 2,
 	[NPF_TCPS_FIN_RECEIVED]	= 60 * 2 * 2,
 	/* Half-closed cases: 6 hours. */
-	[NPF_TCPS_CLOSE_WAIT]	= 60 * 2 * 2,
-	[NPF_TCPS_FIN_WAIT]	= 30,
+	[NPF_TCPS_CLOSE_WAIT]	= 60 * 60 * 6,
+	[NPF_TCPS_FIN_WAIT]	= 60 * 60 * 6,
 	/* Full close cases: 30 sec and 2 * MSL. */
 	[NPF_TCPS_CLOSING]	= 30,
 	[NPF_TCPS_LAST_ACK]	= 30,
@@ -218,14 +218,14 @@ static const int npf_tcp_fsm[NPF_TCP_NSTATES][2][TCPFC_COUNT] = {
 	[NPF_TCPS_FIN_SENT] = {
 		[NPF_FLOW_FORW] = {
 			/* FIN may be re-transmitted.  Late ACK as well. */
-			[TCPFC_ACK]     = NPF_TCPS_OK,
-			[TCPFC_FIN]     = NPF_TCPS_OK,
+			[TCPFC_ACK]	= NPF_TCPS_OK,
+			[TCPFC_FIN]	= NPF_TCPS_OK,
 		},
 		[NPF_FLOW_BACK] = {
 			/* If ACK, connection is half-closed now. */
-			[TCPFC_ACK]     = NPF_TCPS_FIN_WAIT,
+			[TCPFC_ACK]	= NPF_TCPS_FIN_WAIT,
 			/* FIN or FIN-ACK race - immediate closing. */
-			[TCPFC_FIN]     = NPF_TCPS_CLOSING,
+			[TCPFC_FIN]	= NPF_TCPS_CLOSING,
 		},
 	},
 	[NPF_TCPS_FIN_RECEIVED] = {
