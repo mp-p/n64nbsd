@@ -185,9 +185,13 @@ npf_addr_cmp(const npf_addr_t *addr1, const npf_netmask_t mask1,
 uint16_t
 npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
 {
-	uint16_t adj, sia = 0; soa = 0;
-	uint16_t max_dwrds = px >> 4;
+	uint16_t adj, sia, soa;
+	uint16_t max_dwrds;
 	int i;
+
+	sia = 0;
+	soa = 0;
+	max_dwrds = px >> 4;
 
 	KASSERT(px > 0 && px < NPF_MAX_NETMASK && ia != NULL && oa != NULL);
 	
@@ -201,7 +205,7 @@ npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
 	while (0xFFFF <= sa2)
 		soa = soa + 1 - 0x10000;
 
-	adj = sin - soa;
+	adj = sia - soa;
 
 	while (0xFFFF <= adj)
 		adj = adj + 1 - 0x10000;
