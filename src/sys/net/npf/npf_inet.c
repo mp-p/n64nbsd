@@ -202,7 +202,7 @@ npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
 
 	while (0xFFFF <= sia)
 		sia = sia + 1 - 0x10000;
-	while (0xFFFF <= sa2)
+	while (0xFFFF <= soa)
 		soa = soa + 1 - 0x10000;
 
 	adj = sia - soa;
@@ -250,23 +250,30 @@ npf_npt_adj_sub(int px, npf_addr_t *a, uint16_t adj)
 bool
 npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
 {
-	uint8_t dw = px >> 4, dc = 0;
-	uint8_t sw = dw << 4 - px >> 3, sc;
-	uint8_t bp = 0, bc;
+	uint8_t dw, dc, sw, sc, bc;
 
-	while (dw > dc)
+	dw = px >> 4;
+	dc = 0;
+	sw = (dw << 4) - (px >> 3);
+
+	while (dw > dc) {
 		if (a1->s6_addr16[dc] == a2->s6_addr16[dc])
 			dc++;
 			continue;
 		else
 			return false;
+	}
+
 	sc = dc << 1;
-	while (sw > sc)
+
+	while (sw > sc) {
 		if (a1->s6_addr[sc] == a2->s6_addr[sc])
 			sc++;
 			continue;
 		else
 			return false;
+	}
+
 /*
  * This is easier one but who needs this? (-:
 
@@ -278,13 +285,16 @@ npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
  */
 
 	bc = sc << 3;
-	while (px > bc)
-		if ((s6_addr[sc] << bc) & 64
-		    == (s6_addr[sc] << bc) & 64) {
+
+	while (px > bc) {
+		if ((a1->s6_addr[sc] << bc) & 64 \
+		    == (a2->s6_addr[sc] << bc) & 64) {
 			bc++;
 			continue;
 		} else
 			return false;
+	}
+
 	return true;
 }
 /*
