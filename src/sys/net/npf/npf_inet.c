@@ -243,64 +243,6 @@ npf_npt_adj_sub(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
 }
 
 /*
- * npf_addr_px_eq_chk: really overcomplicated function comparing
- * prefix of two addresses. It only returns true if both addresses
- * parts are equal.
- */
-bool
-npf_addr_px_eq_chk(npf_netmask_t px, npf_addr_t *a1, npf_addr_t *a2)
-{
-	uint8_t dw, dc, sw, sc, bc;
-
-	dw = px >> 4;
-	dc = 0;
-	sw = (dw << 4) - (px >> 3);
-
-	while (dw > dc) {
-		if (a1->s6_addr16[dc] == a2->s6_addr16[dc]) {
-			dc++;
-			continue;
-		} else {
-			return false;
-		}
-	}
-
-	sc = dc << 1;
-
-	while (sw > sc) {
-		if (a1->s6_addr[sc] == a2->s6_addr[sc]) {
-			sc++;
-			continue;
-		} else {
-			return false;
-		}
-	}
-
-/*
- * This is easier one but who needs this? (-:
-
-	sw = px >> 3;
-	if (memcmp(a1->s6_addr, a2->s6_addr, sizeof(uint8_t) * sw) != 0)
-		return false;
-
- * and ofcourse that below...
- */
-
-	bc = sc << 3;
-
-	while (px > bc) {
-		if (((a1->s6_addr[sc] << bc) & 64) \
-		    == ((a2->s6_addr[sc] << bc) & 64)) {
-			bc++;
-			continue;
-		} else {
-			return false;
-		}
-	}
-
-	return true;
-}
-/*
  * npf_tcpsaw: helper to fetch SEQ, ACK, WIN and return TCP data length.
  *
  * => Returns all values in host byte-order.
