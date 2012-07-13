@@ -127,7 +127,8 @@ struct npf_natpolicy {
 	size_t			n_taddr_sz;
 	npf_addr_t		n_faddr;
 	size_t			n_faddr_sz;
-	uint8_t			n_px;
+	npf_netmask_t		n_px;
+	uint16_t		n_adj;
 	in_port_t		n_tport;
 };
 
@@ -598,7 +599,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	npf_addr_t *addr, *oaddr;
 	u_int offby;
 	KASSERT(npf_iscached(npc, NPC_IP46));
-	uint8_t px = np->n_px;
+	npf_netmask_t px = np->n_px;
 
 	uint16_t adj;
 
@@ -610,7 +611,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	 */
 	adj = npf_npt_adj_calc(px, &np->n_faddr, &np->n_taddr);
 
-	if (npf_addr_px_eq_chk(px, &np->n_faddr, npc->npc_srcip)) { 
+	if (in6_are_prefix_equal(&np->n_faddr, npc->npc_srcip, px)) { 
 		/* "Forwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
@@ -626,7 +627,7 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		npf_npt_adj_add(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_src);
-	} else if (npf_addr_px_eq_chk(px, &np->n_taddr, npc->npc_dstip)) { 
+	} else if (in6_are_prefix_equal(&np->n_taddr, npc->npc_dstip, px)) { 
 		/* "Backwards" */
 		KASSERT(
 		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^

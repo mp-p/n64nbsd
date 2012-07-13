@@ -183,11 +183,9 @@ npf_addr_cmp(const npf_addr_t *addr1, const npf_netmask_t mask1,
  * NOTICE: Currently it should be used only for /48 prefix translation.
  */
 uint16_t
-npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
+npf_npt_adj_calc(const npf_netmask_t px, const npf_addr_t *ia, const npf_addr_t *oa)
 {
-	uint16_t adj, sia, soa;
-	uint16_t max_dwrds;
-	int i;
+	int adj, sia, soa, max_dwrds, i;
 
 	sia = 0;
 	soa = 0;
@@ -218,10 +216,12 @@ npf_npt_adj_calc(const int px, const npf_addr_t *ia, const npf_addr_t *oa)
  * NOTICE: Currently it should be used only for /48 prefix translation.
  */
 void
-npf_npt_adj_add(int px, npf_addr_t *a, uint16_t adj)
+npf_npt_adj_add(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
 {
-	uint16_t dw = px >> 4;
-	uint16_t ap = a->s6_addr16[dw];
+	int dw, ap; 
+	
+	dw = px >> 4;
+	ap = a->s6_addr16[dw];
 
 	ap += adj;
 
@@ -237,7 +237,7 @@ npf_npt_adj_add(int px, npf_addr_t *a, uint16_t adj)
  * NOTICE: The same limitations as npf_npt_adj_add.
  */
 void
-npf_npt_adj_sub(int px, npf_addr_t *a, uint16_t adj)
+npf_npt_adj_sub(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
 {
 	npf_npt_adj_add(px, a, ~adj);
 }
@@ -248,7 +248,7 @@ npf_npt_adj_sub(int px, npf_addr_t *a, uint16_t adj)
  * parts are equal.
  */
 bool
-npf_addr_px_eq_chk(int px, npf_addr_t *a1, npf_addr_t *a2)
+npf_addr_px_eq_chk(npf_netmask_t px, npf_addr_t *a1, npf_addr_t *a2)
 {
 	uint8_t dw, dc, sw, sc, bc;
 

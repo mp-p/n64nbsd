@@ -547,7 +547,8 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	nl_rule_t *rl;
 	prop_dictionary_t rldict;
 	prop_data_t	addrdat;
-	uint32_t	px, attr;
+	uint32_t	attr;
+	npf_netmask_t	px;
 	size_t	sz;
 
 	if (to_af == AF_INET || from_af == AF_INET) {
@@ -588,7 +589,7 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 	prop_object_release(addrdat);
 
 	px = 48; /* XXX Just for tests!!! */
-	prop_dictionary_set_uint32(rldict, "prefix", px);
+	prop_dictionary_set_uint8(rldict, "prefix", px);
 	/*
 	 * Just not for now...
 	prop_dictionary_set_uint32(rldict, "adjustment", adj);
