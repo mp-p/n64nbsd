@@ -90,7 +90,21 @@ __KERNEL_RCSID(0, "$NetBSD: npf_nat.c,v 1.14 2012/07/01 23:21:06 rmind Exp $");
 #include <sys/cprng.h>
 
 #include <net/pfil.h>
+#include <net/if.h>
+#include <net/if_types.h>
+#include <net/if_dl.h>
+#include <net/route.h>
+#include <net/radix.h>
+
 #include <netinet/in.h>
+#include <netinet6/in6_var.h>
+#include <netinet6/in6_ifattach.h>
+#include <netinet/ip6.h>
+#include <netinet6/ip6_var.h>
+#include <netinet6/nd6.h>
+#include <netinet/icmp6.h>
+#include <netinet6/icmp6_private.h>
+#include <netinet6/scope6_var.h>
 
 #include "npf_impl.h"
 

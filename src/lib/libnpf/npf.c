@@ -532,9 +532,16 @@ npf_nat_create(int type, u_int flags, u_int if_idx,
 	}
 	prop_dictionary_set(rldict, "translation-ip", addrdat);
 	prop_object_release(addrdat);
-
-	/* Translation port (for redirect case). */
-	prop_dictionary_set_uint16(rldict, "translation-port", port);
+	if (flags == NPF_NAT_66) {
+		prop_dictionary_set_uint8(rldict, "prefix", 48);
+		/*
+		 * Just not for now...
+		prop_dictionary_set_uint32(rldict, "adjustment", adj);
+		 */
+	} else {
+		/* Translation port (for redirect case). */
+		prop_dictionary_set_uint16(rldict, "translation-port", port);
+	}
 
 	return (nl_nat_t *)rl;
 }

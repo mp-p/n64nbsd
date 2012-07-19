@@ -277,11 +277,11 @@ mapseg
 map
 	: MAP ifindex map_sd mapseg map_type mapseg PASS filt_opts
 	{
-		npfctl_build_nat($3, $5, $2, &$4, &$6, &$8);
+		npfctl_build_map($3, $5, $2, &$4, &$6, &$8);
 	}
 	| MAP ifindex map_sd mapseg map_type mapseg
 	{
-		npfctl_build_nat($3, $5, $2, &$4, &$6, NULL);
+		npfctl_build_map($3, $5, $2, &$4, &$6, NULL);
 	}
 /*
 	This might be used later for differentiation of maping types

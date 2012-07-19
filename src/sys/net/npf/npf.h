@@ -166,6 +166,8 @@ int		nbuf_find_tag(nbuf_t *, uint32_t, void **);
 
 #define	NPF_NAT_PORTS			0x01
 #define	NPF_NAT_PORTMAP			0x02
+#define NPF_NAT_64			0x640
+#define NPF_NAT_66			0x660
 
 /* Table types. */
 #define	NPF_TABLE_HASH			1
