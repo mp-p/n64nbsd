@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_nat.c,v 1.14 2012/07/01 23:21:06 rmind Exp $	*/
+/*	$NetBSD: npf_nat.c,v 1.15 2012/07/15 00:23:00 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2010-2012 The NetBSD Foundation, Inc.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_nat.c,v 1.14 2012/07/01 23:21:06 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_nat.c,v 1.15 2012/07/15 00:23:00 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -312,9 +312,18 @@ npf_nat_freepolicy(npf_natpolicy_t *np)
 }
 
 void
-npf_nat_freealg(npf_alg_t *alg)
+npf_nat_freealg(npf_natpolicy_t *np, npf_alg_t *alg)
 {
-	(void)alg; /* TODO */
+	npf_nat_t *nt;
+
+	mutex_enter(&np->n_lock);
+	LIST_FOREACH(nt, &np->n_nat_list, nt_entry) {
+		if (nt->nt_alg != alg) {
+			continue;
+		}
+		nt->nt_alg = NULL;
+	}
+	mutex_exit(&np->n_lock);
 }
 
 /*
@@ -497,11 +506,11 @@ npf_nat_create(npf_cache_t *npc, npf_natpolicy_t *np)
 	/* Save the original address which may be rewritten. */
 	if (np->n_type == NPF_NATOUT) {
 		/* Source (local) for Outbound NAT. */
-		memcpy(&nt->nt_oaddr, npc->npc_srcip, npc->npc_ipsz);
+		memcpy(&nt->nt_oaddr, npc->npc_srcip, npc->npc_alen);
 	} else {
 		/* Destination (external) for Inbound NAT. */
 		KASSERT(np->n_type == NPF_NATIN);
-		memcpy(&nt->nt_oaddr, npc->npc_dstip, npc->npc_ipsz);
+		memcpy(&nt->nt_oaddr, npc->npc_dstip, npc->npc_alen);
 	}
 
 	/*

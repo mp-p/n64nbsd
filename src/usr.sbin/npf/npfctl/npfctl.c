@@ -1,4 +1,4 @@
-/*	$NetBSD: npfctl.c,v 1.14 2012/07/01 23:21:07 rmind Exp $	*/
+/*	$NetBSD: npfctl.c,v 1.17 2012/07/19 22:22:53 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: npfctl.c,v 1.14 2012/07/01 23:21:07 rmind Exp $");
+__RCSID("$NetBSD: npfctl.c,v 1.17 2012/07/19 22:22:53 rmind Exp $");
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -42,6 +42,7 @@ __RCSID("$NetBSD: npfctl.c,v 1.14 2012/07/01 23:21:07 rmind Exp $");
 #include <err.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "npfctl.h"
 
@@ -62,7 +63,7 @@ enum {
 	NPFCTL_SESSIONS_LOAD,
 };
 
-static struct operations_s {
+static const struct operations_s {
 	const char *		cmd;
 	int			action;
 } operations[] = {
@@ -144,7 +145,7 @@ usage(void)
 	    "\t%s table <tid> [ flush ]\n",
 	    progname);
 	fprintf(stderr,
-	    "\t%s table <tid> { add | rem } <address/mask>\n",
+	    "\t%s table <tid> { add | rem | test } <address/mask>\n",
 	    progname);
 
 	exit(EXIT_FAILURE);
@@ -170,42 +171,64 @@ npfctl_parsecfg(const char *cfg)
 static int
 npfctl_print_stats(int fd)
 {
+	static const struct stats_s {
+		/* Note: -1 indicates a new section. */
+		int		index;
+		const char *	name;
+	} stats[] = {
+		{ -1, "Packets passed"					},
+		{ NPF_STAT_PASS_DEFAULT,	"default pass"		},
+		{ NPF_STAT_PASS_RULESET,	"ruleset pass"		},
+		{ NPF_STAT_PASS_SESSION,	"session pass"		},
+
+		{ -1, "Packets blocked"					},
+		{ NPF_STAT_BLOCK_DEFAULT,	"default block"		},
+		{ NPF_STAT_BLOCK_RULESET,	"ruleset block"		},
+
+		{ -1, "Session and NAT entries"				},
+		{ NPF_STAT_SESSION_CREATE,	"session allocations"	},
+		{ NPF_STAT_SESSION_DESTROY,	"session destructions"	},
+		{ NPF_STAT_NAT_CREATE,		"NAT entry allocations"	},
+		{ NPF_STAT_NAT_DESTROY,		"NAT entry destructions"},
+
+		{ -1, "Invalid packet state cases"			},
+		{ NPF_STAT_INVALID_STATE,	"cases in total"	},
+		{ NPF_STAT_INVALID_STATE_TCP1,	"TCP case I"		},
+		{ NPF_STAT_INVALID_STATE_TCP2,	"TCP case II"		},
+		{ NPF_STAT_INVALID_STATE_TCP3,	"TCP case III"		},
+
+		{ -1, "Packet race cases"				},
+		{ NPF_STAT_RACE_NAT,		"NAT association race"	},
+		{ NPF_STAT_RACE_SESSION,	"duplicate session race"},
+
+		{ -1, "Rule procedure cases"				},
+		{ NPF_STAT_RPROC_LOG,		"packets logged"	},
+		{ NPF_STAT_RPROC_NORM,		"packets normalised"	},
+
+		{ -1, "Fragmentation"					},
+		{ NPF_STAT_FRAGMENTS,		"fragments"		},
+		{ NPF_STAT_REASSEMBLY,		"reassembled"		},
+		{ NPF_STAT_REASSFAIL,		"failed reassembly"	},
+
+		{ -1, "Other"						},
+		{ NPF_STAT_ERROR,		"unexpected errors"	},
+	};
 	uint64_t *st = zalloc(NPF_STATS_SIZE);
 
 	if (ioctl(fd, IOC_NPF_STATS, &st) != 0) {
 		err(EXIT_FAILURE, "ioctl(IOC_NPF_STATS)");
 	}
 
-	printf("Packets passed:\n\t%"PRIu64" default pass\n\t"
-	    "%"PRIu64 " ruleset pass\n\t%"PRIu64" session pass\n\n",
-	    st[NPF_STAT_PASS_DEFAULT], st[NPF_STAT_PASS_RULESET],
-	    st[NPF_STAT_PASS_SESSION]);
+	for (unsigned i = 0; i < __arraycount(stats); i++) {
+		const char *sname = stats[i].name;
+		int sidx = stats[i].index;
 
-	printf("Packets blocked:\n\t%"PRIu64" default block\n\t"
-	    "%"PRIu64 " ruleset block\n\n", st[NPF_STAT_BLOCK_DEFAULT],
-	    st[NPF_STAT_BLOCK_RULESET]);
-
-	printf("Session and NAT entries:\n\t%"PRIu64" session allocations\n\t"
-	    "%"PRIu64" session destructions\n\t%"PRIu64" NAT entry allocations\n\t"
-	    "%"PRIu64" NAT entry destructions\n\n", st[NPF_STAT_SESSION_CREATE],
-	    st[NPF_STAT_SESSION_DESTROY], st[NPF_STAT_NAT_CREATE],
-	    st[NPF_STAT_NAT_DESTROY]);
-
-	printf("Invalid packet state cases:\n\t%"PRIu64" cases in total\n\t"
-	    "%"PRIu64" TCP case I\n\t%"PRIu64" TCP case II\n\t%"PRIu64
-	    " TCP case III\n\n", st[NPF_STAT_INVALID_STATE],
-	    st[NPF_STAT_INVALID_STATE_TCP1], st[NPF_STAT_INVALID_STATE_TCP2],
-	    st[NPF_STAT_INVALID_STATE_TCP3]);
-
-	printf("Packet race cases:\n\t%"PRIu64" NAT association race\n\t"
-	    "%"PRIu64" duplicate session race\n\n", st[NPF_STAT_RACE_NAT],
-	    st[NPF_STAT_RACE_SESSION]);
-
-	printf("Rule processing procedure cases:\n"
-	    "\t%"PRIu64" packets logged\n\t%"PRIu64" packets normalized\n\n",
-	    st[NPF_STAT_RPROC_LOG], st[NPF_STAT_RPROC_NORM]);
-
-	printf("Unexpected error cases:\n\t%"PRIu64"\n", st[NPF_STAT_ERROR]);
+		if (sidx == -1) {
+			printf("%s:\n", sname);
+		} else {
+			printf("\t%"PRIu64" %s\n", st[sidx], sname);
+		}
+	}
 
 	free(st);
 	return 0;
@@ -236,18 +259,77 @@ npfctl_print_error(const nl_error_t *ne)
 	}
 }
 
+__dead static void
+npfctl_table(int fd, char **argv)
+{
+	static const struct tblops_s {
+		const char *	cmd;
+		int		action;
+	} tblops[] = {
+		{ "add",	NPF_IOCTL_TBLENT_ADD },
+		{ "rem",	NPF_IOCTL_TBLENT_REM },
+		{ "test",	0 },
+		{ NULL,		0 }
+	};
+	npf_ioctl_table_t nct;
+	fam_addr_mask_t fam;
+	char *cmd = argv[3];
+	char *arg = argv[3];
+	int n, alen;
+
+	memset(&nct, 0, sizeof(npf_ioctl_table_t));
+	nct.nct_tid = atoi(argv[2]);
+
+	for (n = 0; tblops[n].cmd != NULL; n++) {
+		if (strcmp(cmd, tblops[n].cmd) == 0) {
+			nct.nct_action = tblops[n].action;
+			arg = argv[4];
+			break;
+		}
+	}
+	if (!npfctl_parse_cidr(arg, &fam, &alen)) {
+		errx(EXIT_FAILURE, "invalid CIDR '%s'", arg);
+	}
+	memcpy(&nct.nct_addr, &fam.fam_addr, sizeof(npf_addr_t));
+	nct.nct_mask = fam.fam_mask;
+	nct.nct_alen = alen;
+
+	if (ioctl(fd, IOC_NPF_TABLE, &nct) != -1) {
+		errno = 0;
+	}
+	switch (errno) {
+	case EEXIST:
+		warnx("entry already exists or is conflicting");
+		break;
+	case ENOENT:
+		warnx("no matching entry was not found");
+		break;
+	case EINVAL:
+		warnx("invalid address, mask or table ID");
+		break;
+	case 0:
+		printf("%s: %s\n", getprogname(), nct.nct_action == 0 ?
+		    "matching entry found" : "success");
+		break;
+	default:
+		warn("error");
+	}
+	exit(errno ? EXIT_FAILURE : EXIT_SUCCESS);
+}
+
 static void
 npfctl(int action, int argc, char **argv)
 {
 	int fd, ret, ver, boolval;
-	npf_ioctl_table_t tbl;
-	char *arg;
 
 	fd = open(NPF_DEV_PATH, O_RDONLY);
 	if (fd == -1) {
 		err(EXIT_FAILURE, "cannot open '%s'", NPF_DEV_PATH);
 	}
 	ret = ioctl(fd, IOC_NPF_VERSION, &ver);
+	if (ret == -1) {
+		err(EXIT_FAILURE, "ioctl");
+	}
 	if (ver != NPF_VERSION) {
 		errx(EXIT_FAILURE,
 		    "incompatible NPF interface version (%d, kernel %d)\n"
@@ -266,6 +348,9 @@ npfctl(int action, int argc, char **argv)
 		npfctl_config_init(false);
 		npfctl_parsecfg(argc < 3 ? NPF_CONF_PATH : argv[2]);
 		ret = npfctl_config_send(fd);
+		if (ret) {
+			errx(EXIT_FAILURE, "ioctl: %s", strerror(ret));
+		}
 		break;
 	case NPFCTL_SHOWCONF:
 		ret = npfctl_config_show(fd);
@@ -277,45 +362,19 @@ npfctl(int action, int argc, char **argv)
 		if (argc < 5) {
 			usage();
 		}
-		tbl.nct_tid = atoi(argv[2]);
-		if (strcmp(argv[3], "add") == 0) {
-			/* Add table entry. */
-			tbl.nct_action = NPF_IOCTL_TBLENT_ADD;
-			arg = argv[4];
-		} else if (strcmp(argv[3], "rem") == 0) {
-			/* Remove entry. */
-			tbl.nct_action = NPF_IOCTL_TBLENT_REM;
-			arg = argv[4];
-		} else {
-			/* Default: lookup. */
-			tbl.nct_action = 0;
-			arg = argv[3];
-		}
-		fam_addr_mask_t *fam = npfctl_parse_cidr(arg);
-		if (fam == NULL) {
-			errx(EXIT_FAILURE, "invalid CIDR '%s'", arg);
-		}
-		memcpy(&tbl.nct_addr, &fam->fam_addr, sizeof(npf_addr_t));
-		tbl.nct_mask = fam->fam_mask;
-		ret = ioctl(fd, IOC_NPF_TABLE, &tbl);
-		if (tbl.nct_action == 0) {
-			printf("%s\n", ret ? "not found" : "found");
-			exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
-		}
+		npfctl_table(fd, argv);
 		break;
 	case NPFCTL_STATS:
 		ret = npfctl_print_stats(fd);
 		break;
 	case NPFCTL_SESSIONS_SAVE:
-		ret = npf_sessions_recv(fd, NPF_SESSDB_PATH);
-		if (ret) {
+		if (npf_sessions_recv(fd, NPF_SESSDB_PATH) != 0) {
 			errx(EXIT_FAILURE, "could not save sessions to '%s'",
 			    NPF_SESSDB_PATH);
 		}
 		break;
 	case NPFCTL_SESSIONS_LOAD:
-		ret = npf_sessions_send(fd, NPF_SESSDB_PATH);
-		if (ret) {
+		if (npf_sessions_send(fd, NPF_SESSDB_PATH) != 0) {
 			errx(EXIT_FAILURE, "no sessions loaded from '%s'",
 			    NPF_SESSDB_PATH);
 		}

@@ -1,4 +1,4 @@
-/*	$NetBSD: npfctl.h,v 1.16 2012/07/01 23:21:07 rmind Exp $	*/
+/*	$NetBSD: npfctl.h,v 1.18 2012/07/19 21:52:29 spz Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012 The NetBSD Foundation, Inc.
@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #include <net/npf_ncode.h>
 #include <net/npf.h>
@@ -98,19 +99,18 @@ void		npfctl_print_error(const nl_error_t *);
 bool		npfctl_table_exists_p(const char *);
 int		npfctl_protono(const char *);
 in_port_t	npfctl_portno(const char *);
-uint8_t		npfctl_icmpcode(uint8_t, const char *);
-uint8_t		npfctl_icmptype(const char *);
+uint8_t		npfctl_icmpcode(int, uint8_t, const char *);
+uint8_t		npfctl_icmptype(int, const char *);
 unsigned long   npfctl_find_ifindex(const char *);
 npfvar_t *	npfctl_parse_tcpflag(const char *);
 npfvar_t *	npfctl_parse_table_id(const char *);
-npfvar_t * 	npfctl_parse_icmpcode(const char *);
-npfvar_t * 	npfctl_parse_icmp(int, int);
+npfvar_t * 	npfctl_parse_icmp(int, int, int);
 npfvar_t *	npfctl_parse_iface(const char *);
 npfvar_t *	npfctl_parse_port_range(in_port_t, in_port_t);
 npfvar_t *	npfctl_parse_port_range_variable(const char *);
 npfvar_t *	npfctl_parse_fam_addr_mask(const char *, const char *,
 		    unsigned long *);
-fam_addr_mask_t *npfctl_parse_cidr(char *);
+bool		npfctl_parse_cidr(char *, fam_addr_mask_t *, int *);
 
 /*
  * N-code generation interface.
@@ -124,6 +124,7 @@ typedef struct nc_ctx nc_ctx_t;
 #define	NC_MATCH_TCP		0x04
 #define	NC_MATCH_UDP		0x08
 #define	NC_MATCH_ICMP		0x10
+#define	NC_MATCH_ICMP6		0x20
 
 nc_ctx_t *	npfctl_ncgen_create(void);
 void *		npfctl_ncgen_complete(nc_ctx_t *, size_t *);
@@ -138,6 +139,7 @@ void		npfctl_gennc_v6cidr(nc_ctx_t *, int, const npf_addr_t *,
 		    const npf_netmask_t);
 void		npfctl_gennc_ports(nc_ctx_t *, int, in_port_t, in_port_t);
 void		npfctl_gennc_icmp(nc_ctx_t *, int, int);
+void		npfctl_gennc_icmp6(nc_ctx_t *, int, int);
 void		npfctl_gennc_tbl(nc_ctx_t *, int, u_int);
 void		npfctl_gennc_tcpfl(nc_ctx_t *, uint8_t, uint8_t);
 void		npfctl_gennc_proto(nc_ctx_t *ctx, uint8_t, uint8_t);

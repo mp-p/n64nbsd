@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_ncgen.c,v 1.11 2012/07/01 23:21:07 rmind Exp $	*/
+/*	$NetBSD: npf_ncgen.c,v 1.13 2012/07/19 21:52:29 spz Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012 The NetBSD Foundation, Inc.
@@ -34,12 +34,11 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: npf_ncgen.c,v 1.11 2012/07/01 23:21:07 rmind Exp $");
+__RCSID("$NetBSD: npf_ncgen.c,v 1.13 2012/07/19 21:52:29 spz Exp $");
 
 #include <stdlib.h>
 #include <stddef.h>
 #include <inttypes.h>
-#include <assert.h>
 #include <err.h>
 
 #include "npfctl.h"
@@ -333,6 +332,26 @@ npfctl_gennc_icmp(nc_ctx_t *ctx, int type, int code)
 
 	/* OP, code, type (2 words) */
 	*nc++ = NPF_OPCODE_ICMP4;
+	*nc++ = (type == -1 ? 0 : (1 << 31) | ((type & 0xff) << 8)) |
+		(code == -1 ? 0 : (1 << 30) | (code & 0xff));
+
+	/* Comparison block (2 words). */
+	npfctl_ncgen_addjmp(ctx, &nc);
+
+	/* + 4 words. */
+	npfctl_ncgen_putptr(ctx, nc);
+}
+
+/*
+ * npfctl_gennc_icmp6: fragment to match ICMPV6 type and code.
+ */
+void
+npfctl_gennc_icmp6(nc_ctx_t *ctx, int type, int code)
+{
+	uint32_t *nc = npfctl_ncgen_getptr(ctx, 4 /* words */);
+
+	/* OP, code, type (2 words) */
+	*nc++ = NPF_OPCODE_ICMP6;
 	*nc++ = (type == -1 ? 0 : (1 << 31) | ((type & 0xff) << 8)) |
 		(code == -1 ? 0 : (1 << 30) | (code & 0xff));
 
