@@ -172,7 +172,8 @@ void		npfctl_build_map(int, int, u_int, const addr_port_t *,
 		    const addr_port_t *, const filt_opts_t *);
 void		npfctl_build_nat44(int, u_int, fam_addr_mask_t *,
 		    fam_addr_mask_t *, const filt_opts_t *, in_port_t);
-void		npfctl_build_nat64(void);
+void		npfctl_build_nat64(int, u_int, fam_addr_mask_t *,
+		    fam_addr_mask_t *, const filt_opts_t *);
 void		npfctl_build_nat66(int, u_int, fam_addr_mask_t *,
 		    fam_addr_mask_t *, const filt_opts_t *);
 void		npfctl_build_table(const char *, u_int, const char *);
