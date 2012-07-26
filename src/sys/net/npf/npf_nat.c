@@ -215,6 +215,7 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		/* I don't know what to do with n_addr_sz which for sanity
 		 * should be divided in to two parts (from,to). But currently
 		 * it doesn't matter - both addresses are the same length.
+		 * "looking ok" spz
 		 */
 
 		/* IP to which translete */
@@ -644,9 +645,6 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		addr = npc->npc_srcip;
 		oaddr = npc->npc_srcip;
 
-		/* Addjustment addition. 
-		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
-		 */
 		npf_npt_adj_add(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_src);
@@ -660,9 +658,6 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		addr = npc->npc_dstip;
 		oaddr = npc->npc_dstip;
 
-		/* Addjustment substraction.
-		 * The 48 will ewentualy be prefix from npf_natpolicy_t.n_px.
-		 */
 		npf_npt_adj_sub(px, addr, adj);
 
 		offby = offsetof(struct ip, ip_dst);
@@ -671,10 +666,10 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 }
 
 	/* Advance to the adress and rewrite it. */
-	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_ipsz, addr))
+	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_alen, addr))
 		return EINVAL;
 	/* Should We cache it? */
-	memcpy(oaddr, addr, npc->npc_ipsz);
+	memcpy(oaddr, addr, npc->npc_alen);
 	return 0;
 }
 
