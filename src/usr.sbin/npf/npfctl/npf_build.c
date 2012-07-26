@@ -524,7 +524,24 @@ npfctl_build_map(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 	} else {
 		if (((type & NPF_NATIN) && (am1->fam_family == AF_INET6))
 		    || ((type & NPF_NATOUT) && (am2->fam_family == AF_INET6))) {
-			npfctl_build_nat64();
+			/*
+			 * I think that when we shouldn't process NPT_NATOUT with
+			 * IPv6 am2, that would indicate that we are doing reversed
+			 * NAT64: 192.168.0.100 -> 2001:dead:beef::
+			 * Thats why I'm adding assertion here.
+			 */
+			if ((type & NPF_NATOUT) && (am2->fam_family == AF_INET6)) {
+				assert(false);
+				/*
+				 * This assertion might be right to remove it if
+				 * we consider this:
+				 * "map 192.168.0.100 <-> 2001:dead:beef::"
+				 * as a equvalent of:
+				 * "map 2001:dead:beef:: <-> 192.168.0.100"
+				 * and treat as correct form.
+				 */
+			}
+			npfctl_build_nat66(type, if_idx, am1, am2, fopts);
 		} else if (((type & NPF_NATIN) && (am1->fam_family == AF_INET))
 		    || ((type & NPF_NATOUT) && (am2->fam_family == AF_INET))) {
 			in_port_t port = 0;
@@ -535,7 +552,7 @@ npfctl_build_map(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 			}
 			npfctl_build_nat44(type, if_idx, am1, am2, fopts, port);
 		} else {
-			assert(false); /* Shouldn't be here. */
+			assert(false); /* We shouldn't be here. */
 		}
 	}
 }
@@ -592,8 +609,28 @@ npfctl_build_nat44(int type, u_int if_idx, fam_addr_mask_t *am1,
 }
 
 void
-npfctl_build_nat64(void)
+npfctl_build_nat64(int type, u_int if_idx, fam_addr_mask_t *am1,
+    fam_addr_mask_t *am2, const filt_opts_t *fopts)
 {
+	/*
+	 * Assuming that the inbound am1 is from IPv6 world and
+	 * outbound am2 comes from IPv4.
+	 */
+	const opt_proto_t op = { .op_proto = -1, .op_opts = NULL };
+	nl_nat_t *nat;
+
+	nat = npf_nat_create(NPF_NATIN, NPF_NAT_64, if_idx,
+	    &am1->fam_addr, am1->fam_family, 0);
+
+	npfctl_build_ncode(nat, AF_INET6, &op, fopts, true);
+	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
+
+	nat = npf_nat_create(NPF_NATOUT, NPF_NAT_64, if_idx,
+	    &am2->fam_addr, am2->fam_family, 0);
+
+	npfctl_build_ncode(nat, AF_INET, &op, fopts, false);
+	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
+
 	assert(false);
 }
 
@@ -610,7 +647,7 @@ npfctl_build_nat66(int type, u_int if_idx, fam_addr_mask_t *am1,
 	npfctl_build_ncode(nat, AF_INET6, &op, fopts, true);
 	npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
 
-	nat = npf_nat_create(NPF_NATOUT, NPF_NAT_64, if_idx,
+	nat = npf_nat_create(NPF_NATOUT, NPF_NAT_66, if_idx,
 	    &am2->fam_addr, am2->fam_family, 0);
 
 	npfctl_build_ncode(nat, AF_INET6, &op, fopts, false);
