@@ -207,7 +207,8 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 
 	/* Translation type and flags. */
 	prop_dictionary_get_int32(natdict, "type", &np->n_type);
-	if (np->n_type == 66) {	/* 66 is the NPT part */
+	switch (np->n_type) {
+	case NPF_NAT_66: 	/* 66 is the NPT part */
 		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 		cv_init(&np->n_cv, "npfnatcv");
 		LIST_INIT(&np->n_nat_list);
@@ -231,7 +232,9 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
 
 		prop_dictionary_get_uint8(natdict, "prefix", &np->n_px);
-	} else {
+
+		break;
+	default:
 		prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
 
 		/* Should be exclusively either inbound or outbound NAT. */
@@ -272,6 +275,7 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		} else {
 			KASSERT(np->n_portmap != NULL);
 		}
+		break;
 	}
 	return np;
 }
@@ -663,13 +667,84 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 		offby = offsetof(struct ip, ip_dst);
 	} else {
 		/* As far as I know We shouldn't be here. */
-}
+	}
 
 	/* Advance to the adress and rewrite it. */
 	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_alen, addr))
 		return EINVAL;
 	/* Should We cache it? */
 	memcpy(oaddr, addr, npc->npc_alen);
+	return 0;
+}
+
+static int
+npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
+    const bool forw, const int di)
+{
+	void *n_ptr = nbuf_dataptr(nbuf);
+	npf_natpolicy_t *np = nt->nt_natpolicy;
+	npf_addr_t *addr;
+	in_port_t port;
+
+	KASSERT(npf_iscached(npc, NPC_IP46));
+
+	if (forw) {
+		/* "Forwards" stream: use translation address/port. */
+		addr = &np->n_taddr;
+		port = nt->nt_tport;
+	} else {
+		/* "Backwards" stream: use orginal address/port. */
+		addr = &nt->nt_oaddr;
+		port = nt->nt_oport;
+	}
+	KASSERT((np->n_flags & NPF_NAT_PORTS != 0 && port != 0));
+	
+	/* Execute ALG hook first. */
+	npf_alg_exec(npc, nbuf, nt, di);
+
+	/*
+	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
+	 * the cache containing original values for checksum calculation.
+	 */
+
+	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
+		return EINVAL;
+	}
+
+	/*
+	 * Address translation: rewrite source/destination address, depending
+	 * on direction (PFIL_OUT - for source, PFIL_IN for destination).
+	 */
+	if (!npf_rwrip(npc, nbuf, n_ptr, di, addr)) {
+		return 0;
+	}
+	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
+		/* Done. */
+		return 0;
+	}
+
+	switch (npf_cache_ipproto(npc)) {
+	case IPPROTO_TCP:
+	case IPPROTO_UDP:
+		KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
+		if (!npf_rwrport(npc, nbuf, n_ptr, di, port)) {
+			return EINVAL;
+		}
+		break;
+	case IPPROTO_ICMP:
+		KASSERT(npf_iscached(npc, NPC_ICMP));
+		/* Nothing */
+		break;
+	default:
+		return ENOTSUP;
+	}
+	return 0;
+}
+
+static int
+npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
+    const bool forw, const int di)
+{
 	return 0;
 }
 
@@ -788,7 +863,7 @@ npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp, const int di)
         npf_natpolicy_t *np;
         int error;
 
-        /* All relevant IPv4 data should be already cached. */
+        /* All relevant IP data should be already cached. */
         if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
                 return 0;
         }
@@ -806,6 +881,94 @@ npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, ifnet_t *ifp, const int di)
         /* Perform the translation. */
         error = npf_npt_translate(npc, nbuf, np, di);
         return error;
+}
+
+/*
+ * npf_do_nat46: translates from v4 backto v6 using previously created
+ * session entry. If no session, do nothing (cleanly).
+ */
+int
+npf_do_nat46(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
+    ifnet_t *ifp, const int di)
+{
+	npf_nat_t *nt;
+        int error = 0;
+	bool forw;
+
+        /* All relevant IP data should be already cached. */
+        if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
+                return 0;
+        }
+	/* NOTICE: npf_session_retnat should be modified to support NAT46 */
+	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
+        	error = npf_nat46_translate(npc, nbuf, nt, forw, di);
+	}
+
+	return error;
+}
+
+/*
+ *
+ */
+int
+npf_do_nat64(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
+    ifnet_t *ifp, const int di)
+{
+	npf_session_t *nse = NULL;
+	npf_natpolicy_t *np;
+	npf_nat_t *nt;
+	int error;
+	bool new, forw;
+	if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
+		return 0;
+	}
+	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
+		np = nt->nt_natpolicy;
+		new = false;
+	} else {
+		np = npf_nat_inspect(npc, nbuf, ifp, di);
+		if (np == NULL) {
+			return 0;
+		}
+
+		nt = npf_nat_create(npc, np);
+		if (nt == NULL) {
+			npf_core_exit();
+			return ENOMEM;
+		}
+		npf_core_exit();
+		new = true;
+		if (npf_alg_match(npc, nbuf, nt)) {
+			KASSERT(nt->nt_alg != NULL);
+		}
+
+		if (se == NULL) {
+			nse = npf_session_establish(npc, nbuf, di);
+			if (nse == NULL) {
+				error = ENOMEM;
+			/*	goto out; */
+			} else {
+				se = nse;
+			}
+		}
+	}
+	if (!error) {
+		error = npf_nat64_translate(npc, nbuf, nt, forw, di);
+		if (__predict_false(new)) {
+			nt->nt_session = se;
+			error = npf_session_setnat(se, nt, di);
+		}
+	}
+	if (error) {
+		if (nse) {
+			npf_session_expire(nse);
+		}
+		npf_nat_expire(nt);
+	}
+	if (__predict_false(new) && nse) {
+		npf_session_release(nse);
+	}
+	return error;
 }
 
 /*
