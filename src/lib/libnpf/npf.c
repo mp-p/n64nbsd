@@ -576,7 +576,9 @@ npf_static_nat_create(int type, int map_type, u_int if_idx,
 
 	prop_dictionary_set_int32(rldict, "type", type);
 	/*
-	 *	I'm using map_type == 66 for this...
+	 * I'm using map_type == NPF_NAT_66 for this...
+	 * With current changes "map_type" might be replaced
+	 * by plain "type".
 	 */
 	prop_dictionary_set_int32(rldict, "map-type", map_type);
 
