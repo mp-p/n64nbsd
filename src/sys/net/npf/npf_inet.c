@@ -243,6 +243,32 @@ npf_npt_adj_sub(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
 }
 
 /*
+ * Combine Well-Known-Prefix with IPv4 address.
+ */
+void
+npf_v4_to_v6(npf_addr_t *a, npf_addr_t *b)
+{
+	a->s6_addr32[0] = 0x0064ff96; 
+	a->s6_addr32[1] = 0x0; 
+	a->s6_addr32[2] = 0x0; 
+	/* I'm assuming that IPv4 is sitting in first 32bits of npf_addr_t */
+	a->s6_addr32[3] = b->s6_addr32[0];
+}
+
+/*
+ * Extract IPv4 address from Well-Known-Prefixed IPv6 address.
+ */
+void
+npf_v6_to_v4(npf_addr_t *a, npf_addr_t *b)
+{
+	/* I'm assuming that IPv4 is sitting in first 32bits of npf_addr_t */
+	a->s6_addr32[0] = b->s6_addr32[0];
+	a->s6_addr32[1] = 0x0; 
+	a->s6_addr32[2] = 0x0; 
+	a->s6_addr32[3] = 0x0; 
+}
+
+/*
  * npf_tcpsaw: helper to fetch SEQ, ACK, WIN and return TCP data length.
  *
  * => Returns all values in host byte-order.
@@ -610,6 +636,46 @@ npf_rwrip(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr, const int di,
 }
 
 /*
+ * This one might be utterly wrong way to change IPv4 address to IPv6.
+ */
+bool
+npf_rwrip46(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr,
+    npf_addr_t *src, npf_addr_t *dst)
+{
+	npf_addr_t *osrc, *odst;
+	u_int offby_src, offby_dst;
+
+	KASSERT(npf_iscached(npc, NPC_IP46));
+
+	offby_src = offsetof(struct ip, ip_src);
+	osrc = npc->npc_srcip;
+	offby_dst = offsetof(struct ip, ip_dst);
+	odst = npc->npc_dstip;
+
+	/* I'm not sure but it looks that it should work if forcing proper
+	 * size of IP address. In this case both should be IPv6 size.
+	 * If I'm wrong and there is not enough space I think the place to do
+	 * the changes is the nbuf creator. IMHO to have the same structure and
+	 * size of nbuf despite of IPv6 and IPv4 different length is a good way.
+	 *
+	 * I mean by that the header part of nbuf size should be always the same
+	 * regardles of IPv6/IPv4 differences...
+	 *
+	 * There also should be a way to handle IP header options! Currently
+	 * don't know how.
+	 */
+	if(nbuf_advstore(&nbuf, &n_ptr, offby_src, sizeof(struct in6_addr), src))
+		return false;
+
+	if(nbuf_advstore(&nbuf, &n_ptr, offby_dst, sizeof(struct in6_addr), dst))
+		return false;
+
+	memcpy(osrc, src, npc->npc_alen);
+	memcpy(odst, dst, npc->npc_alen);
+	return true;
+}
+
+/*
  * npf_rwrport: rewrite required TCP/UDP port, update the cache.
  */
 bool
@@ -621,6 +687,7 @@ npf_rwrport(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr, const int di,
 	in_port_t *oport;
 
 	KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
+
 	KASSERT(proto == IPPROTO_TCP || proto == IPPROTO_UDP);
 
 	/* Offset to the port and pointer in the cache. */
