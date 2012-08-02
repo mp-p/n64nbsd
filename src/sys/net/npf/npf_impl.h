@@ -175,6 +175,8 @@ int		npf_cache_all(npf_cache_t *, nbuf_t *);
 
 bool		npf_rwrip(npf_cache_t *, nbuf_t *, void *, const int,
 		    npf_addr_t *);
+bool		npf_rwrip46(npf_cache_t *, nbuf_t *, void *,
+		    npf_addr_t *, npf_addr_t *);
 bool		npf_rwrport(npf_cache_t *, nbuf_t *, void *, const int,
 		    in_port_t);
 bool		npf_rwrcksum(npf_cache_t *, nbuf_t *, void *, const int,
@@ -193,6 +195,9 @@ void		npf_addr_mask(const npf_addr_t *, const npf_netmask_t,
 uint16_t	npf_npt_adj_calc(const npf_netmask_t, const npf_addr_t *, const npf_addr_t *);
 void		npf_npt_adj_add(npf_netmask_t, npf_addr_t *, uint16_t);
 void		npf_npt_adj_sub(npf_netmask_t, npf_addr_t *, uint16_t);
+
+void		npf_v4_to_v6(npf_addr_t *, npf_addr_t *);
+void		npf_v6_to_v4(npf_addr_t *, npf_addr_t *);
 
 int		npf_tcpsaw(const npf_cache_t *, tcp_seq *, tcp_seq *,
 		    uint32_t *);
