@@ -704,6 +704,19 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 
 	/* Make sure that we are using ports. */
 	KASSERT((np->n_flags & NPF_NAT_PORTS != 0 && port != 0));
+
+	/*
+	 * Somewhere here there is important step to mess with the
+	 * IPv4 header. Lets say it... The SIZE matters. It's 20
+	 * octets shorter than IPv6 header...
+	 * Sad thing but it's not the only issue. The header options
+	 * need to be translated also. We also need to remember about
+	 * payload sizes and MTU differences.
+	 * So in general we need to create new function like:
+	 * npf_nbuf_af_translator()
+	 * that should do the hard stuff. Mean while need to study
+	 * the nbuf/mbuf a little bit more.
+	 */
 	
 	/* Execute ALG hook first. */
 	npf_alg_exec(npc, nbuf, nt, di);
@@ -753,6 +766,70 @@ static int
 npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
     const bool forw, const int di)
 {
+	void *n_ptr = nbuf_dataptr(nbuf);
+	npf_natpolicy_t *np = nt->nt_natpolicy;
+	npf_addr_t src, *dst;
+	in_port_t port;
+
+	KASSERT(npf_iscached(npc, NPC_IP46));
+
+	/* We need to translate v4 src addres to v6 understandable. */
+	npf_v6_to_v4(&src, &np->n_taddr);
+
+	/* The destination is saved in nt, so use it. */
+	dst = &nt->nt_oaddr;
+
+	/* The port is the orginal port saved in nt, use it. */
+	port = nt->nt_oport;
+
+	/* Make sure that we are using ports. */
+	KASSERT((np->n_flags & NPF_NAT_PORTS != 0 && port != 0));
+
+	/*
+	 * Now we have the same header madness but the other way around...
+	 */
+	
+	/* Execute ALG hook first. */
+	npf_alg_exec(npc, nbuf, nt, di);
+
+	/*
+	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
+	 * the cache containing original values for checksum calculation.
+	 */
+
+/*	I need to think how to do it...
+
+	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
+		return EINVAL;
+	}
+ */
+	/*
+	 * Address translation: rewrite source/destination address, depending
+	 * on direction (PFIL_OUT - for source, PFIL_IN for destination).
+	 */
+	if (!npf_rwrip46(npc, nbuf, n_ptr, &src, dst)) {
+		return 0;
+	}
+	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
+		/* Done. */
+		return 0;
+	}
+
+	switch (npf_cache_ipproto(npc)) {
+	case IPPROTO_TCP:
+	case IPPROTO_UDP:
+		KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
+		if (!npf_rwrport(npc, nbuf, n_ptr, di, port)) {
+			return EINVAL;
+		}
+		break;
+	case IPPROTO_ICMP:
+		KASSERT(npf_iscached(npc, NPC_ICMP));
+		/* Nothing */
+		break;
+	default:
+		return ENOTSUP;
+	}
 	return 0;
 }
 
