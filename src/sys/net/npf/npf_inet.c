@@ -751,9 +751,9 @@ npf_rwrcksum(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr, const int di,
 	} else {
 		/* No checksum for IPv6. */
 		KASSERT(npf_iscached(npc, NPC_IP6));
-		oaddr = NULL;
-		offby = 0;
-		return false;	/* XXX: Not yet supported. */
+		oaddr = (di == PFIL_OUT) ? npc->npc_srcip : npc->npc_dstip;
+		/* Set the offset to point the payload. */
+		offby = npf_cache_hlen(npc); 
 	}
 
 	/* Determine whether TCP/UDP checksum update is needed. */
