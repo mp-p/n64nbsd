@@ -692,7 +692,7 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 	 */
 	m_adj(m, 0);
 
-	if (npc->npc_info == NPC_IP4) {
+	if (npc->npc_info == NPC_IP6) {
 		hlen = sizeof(*ip4);
 	} else {
 		hlen = sizeof(*ip6);
@@ -705,13 +705,13 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 
 	switch(npc->npc_info) {
 
-	case NPC_IP4: {
+	case NPC_IP6: {
 		/* Translating from IPv6 to IPv4 */
 		ip4 = mtod(m, struct ip *);
 		bzero(ip4, hlen);
 		ip4->ip_v	= IPVERSION;
 		ip4->ip_hl	= hlen >> 2;
-		ip4->ip_len	= hlen + npc->npc_ip.v6.ip6_plen;
+		ip4->ip_len	= htons(hlen + npc->npc_ip.v6.ip6_plen);
 		/* ip4->ip_id	= random() & UINT16_MAX; ??? */
 		/* ip4->ip_off	= ???; */
 		/* Taking TTL from v6 hop limit */
@@ -723,7 +723,7 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 		break;
 	}
 
-	case NPC_IP6: {
+	case NPC_IP4: {
 		/* Translating from IPv4 to IPv6 */
 		ip6 = mtod(m, struct ip6_hdr *);
 		bzero(ip6, hlen);
@@ -732,11 +732,17 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 		/* The size of IPv4 packet plus the difference between v6 
 		 * IPv6 and IPv4 header size.
 		 * I've made an assumption that the IPv4 options are unused.
+		 *
+		 * Important: The packet size is now 20 octets longer that is
+		 * it propably should be fragmented.
 		 */
 		ip6->ip6_plen	= npc->npc_ip.v4.ip_len + 20;
 		ip6->ip6_nxt	= npc->npc_next_proto;
-		/* Taking hop limit from v4 TTL */
-		ip6->ip6_hlim	= npc->npc_ip.v4.ip_ttl;
+		/* Taking hop limit from v4 TTL if it's smaller than IPV6_DEFHLIM (?)*/
+		if (npc->npc_ip.v4.ip_ttl < IPV6_DEFHLIM)
+			ip6->ip6_hlim	= npc->npc_ip.v4.ip_ttl;
+		else
+			ip6->ip6_hlim	= IPV6_DEFHLIM;
 		memcpy(ip6->ip6_src.s6_addr, src->s6_addr, sizeof(struct in6_addr));
 		memcpy(ip6->ip6_dst.s6_addr, dst->s6_addr, sizeof(struct in6_addr));
 		/* Now we have IPv6 header ready for action */
