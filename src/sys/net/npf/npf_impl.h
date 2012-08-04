@@ -192,7 +192,8 @@ void		npf_addr_mask(const npf_addr_t *, const npf_netmask_t,
 		    const int, npf_addr_t *);
 
 /* NPT adjustment calculation functions */
-uint16_t	npf_npt_adj_calc(const npf_netmask_t, const npf_addr_t *, const npf_addr_t *);
+uint16_t	npf_npt_adj_calc(const npf_netmask_t, const npf_addr_t *,
+		    const npf_addr_t *);
 void		npf_npt_adj_add(npf_netmask_t, npf_addr_t *, uint16_t);
 void		npf_npt_adj_sub(npf_netmask_t, npf_addr_t *, uint16_t);
 
@@ -314,6 +315,8 @@ bool		npf_nat_matchpolicy(npf_natpolicy_t *, npf_natpolicy_t *);
 bool		npf_nat_sharepm(npf_natpolicy_t *, npf_natpolicy_t *);
 void		npf_nat_freealg(npf_natpolicy_t *, npf_alg_t *);
 
+int		npf_af_translator(npf_cache_t *, nbuf_t **,
+		    npf_addr_t *, npf_addr_t *);
 int		npf_do_nat(npf_cache_t *, npf_session_t *, nbuf_t *,
 		    ifnet_t *, const int);
 int		npf_do_nat46(npf_cache_t *, npf_session_t *, nbuf_t *,
