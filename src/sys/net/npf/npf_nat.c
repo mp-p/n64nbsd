@@ -811,7 +811,9 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * the cache containing original values for checksum calculation.
 	 */
 	addr = (di == PFIL_IN) ? &src : dst;
-
+	/* This is still wrong. We are not updating! We should calculate
+	 * it as new checksum.
+	 */
 	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
 		return EINVAL;
 	}
