@@ -799,6 +799,10 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	
 	npf_af_translator(npc, &nbuf, src, dst);
 
+	/* It would be good to update npc cause we got new packet here. */
+
+	npf_cache_all(npc, nbuf); /* This might do the trick. */
+
 	/* Execute ALG hook first. */
 	npf_alg_exec(npc, nbuf, nt, di);
 
@@ -807,15 +811,13 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * the cache containing original values for checksum calculation.
 	 */
 
-/*	I need to think how to do it...
-
 	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
 		return EINVAL;
 	}
- */
+
 	/*
-	 * Address translation: rewrite source/destination address, depending
-	 * on direction (PFIL_OUT - for source, PFIL_IN for destination).
+	 * IMHO this one should go to /dev/null thanks to
+	 * npf_af_translator() and future to be npf_cache_update()
 	 */
 	if (!npf_rwrip46(npc, nbuf, n_ptr, &src, dst)) {
 		return 0;
