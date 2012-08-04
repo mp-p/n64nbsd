@@ -767,7 +767,7 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 {
 	void *n_ptr = nbuf_dataptr(nbuf);
 	npf_natpolicy_t *np = nt->nt_natpolicy;
-	npf_addr_t src, *dst;
+	npf_addr_t src, *dst, *addr;
 	in_port_t port;
 
 	KASSERT(npf_iscached(npc, NPC_IP46));
@@ -797,7 +797,7 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * the nbuf/mbuf a little bit more.
 	 */
 	
-	npf_af_translator(npc, &nbuf, src, dst);
+	npf_af_translator(npc, &nbuf, &src, dst);
 
 	/* It would be good to update npc cause we got new packet here. */
 
@@ -810,6 +810,7 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
 	 * the cache containing original values for checksum calculation.
 	 */
+	addr = (di == PFIL_IN) ? &src : dst;
 
 	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
 		return EINVAL;
@@ -851,7 +852,7 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 {
 	void *n_ptr = nbuf_dataptr(nbuf);
 	npf_natpolicy_t *np = nt->nt_natpolicy;
-	npf_addr_t src, *dst;
+	npf_addr_t src, *dst, *addr;
 	in_port_t port;
 
 	KASSERT(npf_iscached(npc, NPC_IP46));
@@ -872,7 +873,7 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * Now we have the same header madness but the other way around...
 	 */
 	
-	npf_af_translator(npc, &nbuf, src, dst);
+	npf_af_translator(npc, &nbuf, &src, dst);
 
 	/* Execute ALG hook first. */
 	npf_alg_exec(npc, nbuf, nt, di);
@@ -881,13 +882,12 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
 	 * the cache containing original values for checksum calculation.
 	 */
-
-/*	I need to think how to do it...
+	addr = (di == PFIL_IN) ? &src : dst;
 
 	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
 		return EINVAL;
 	}
- */
+
 	/*
 	 * Address translation: rewrite source/destination address, depending
 	 * on direction (PFIL_OUT - for source, PFIL_IN for destination).
