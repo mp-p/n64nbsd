@@ -851,6 +851,9 @@ npf_do_nat(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
 		return 0;
 	}
 
+	if (npf_iscached(npc, NPC_IP6))
+		return npf_do_nat64(npc, se, nbuf, ifp, di);
+
 	/*
 	 * Return the NAT entry associated with the session, if any.
 	 * Determines whether the stream is "forwards" or "backwards".
@@ -859,6 +862,11 @@ npf_do_nat(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
 	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
 		np = nt->nt_natpolicy;
 		new = false;
+		if ((nt->nt_oaddr.s6_addr32[1]
+		     | nt->nt_oaddr.s6_addr32[2]
+		     | nt->nt_oaddr.s6_addr32[3]) != 0)
+			return npf_do_nat46(npc, se, nbuf, ifp, di);
+
 		goto translate;
 	}
 
