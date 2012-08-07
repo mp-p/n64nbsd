@@ -677,85 +677,6 @@ npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
 	return 0;
 }
 
-int
-npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
-    npf_addr_t *src, npf_addr_t *dst)
-{
-	struct mbuf *m = *nbuf;
-	struct ip *ip4;
-	struct ip6_hdr *ip6;
-	size_t hlen;
-
-	/* Cut off the old header. Currently don't know what the
-	 * second parameter should be. Should I use offsetof()
-	 * somehow?
-	 */
-	m_adj(m, 0);
-
-	if (npc->npc_info == NPC_IP6) {
-		hlen = sizeof(*ip4);
-	} else {
-		hlen = sizeof(*ip6);
-	}
-
-	if ((m_prepend(m, hlen, M_DONTWAIT)) == NULL) {
-		nbuf = NULL;
-		return -1;
-	}
-
-	switch(npc->npc_info) {
-
-	case NPC_IP6: {
-		/* Translating from IPv6 to IPv4 */
-		ip4 = mtod(m, struct ip *);
-		bzero(ip4, hlen);
-		ip4->ip_v	= IPVERSION;
-		ip4->ip_hl	= hlen >> 2;
-		ip4->ip_len	= htons(hlen + npc->npc_ip.v6.ip6_plen);
-		/* ip4->ip_id	= random() & UINT16_MAX; ??? */
-		/* ip4->ip_off	= ???; */
-		/* Taking TTL from v6 hop limit */
-		ip4->ip_ttl	= npc->npc_ip.v6.ip6_hlim;
-		ip4->ip_p	= npc->npc_next_proto;
-		ip4->ip_src.s_addr	= (in_addr_t)src->s6_addr32[0];
-		ip4->ip_dst.s_addr	= (in_addr_t)dst->s6_addr32[0];
-		/* Now we have IPv4 header ready for action */
-		break;
-	}
-
-	case NPC_IP4: {
-		/* Translating from IPv4 to IPv6 */
-		ip6 = mtod(m, struct ip6_hdr *);
-		bzero(ip6, hlen);
-		ip6->ip6_vfc	= IPV6_VERSION;
-		/* ip6->ip6_flow	= ???; */
-		/* The size of IPv4 packet plus the difference between v6 
-		 * IPv6 and IPv4 header size.
-		 * I've made an assumption that the IPv4 options are unused.
-		 *
-		 * Important: The packet size is now 20 octets longer that is
-		 * it propably should be fragmented.
-		 */
-		ip6->ip6_plen	= npc->npc_ip.v4.ip_len + 20;
-		ip6->ip6_nxt	= npc->npc_next_proto;
-		/* Taking hop limit from v4 TTL if it's smaller than IPV6_DEFHLIM (?)*/
-		if (npc->npc_ip.v4.ip_ttl < IPV6_DEFHLIM)
-			ip6->ip6_hlim	= npc->npc_ip.v4.ip_ttl;
-		else
-			ip6->ip6_hlim	= IPV6_DEFHLIM;
-		memcpy(ip6->ip6_src.s6_addr, src->s6_addr, sizeof(struct in6_addr));
-		memcpy(ip6->ip6_dst.s6_addr, dst->s6_addr, sizeof(struct in6_addr));
-		/* Now we have IPv6 header ready for action */
-		break;
-	}
-
-	default:
-		return -1;
-	}
-
-	return 0;
-}
-
 /*
  * npf_nat46_translate: we are doing translation from v4 to v6 world.
  * The translatio requires npf_nat_t entry that will tell us to which
@@ -818,13 +739,6 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 		return EINVAL;
 	}
 
-	/*
-	 * IMHO this one should go to /dev/null thanks to
-	 * npf_af_translator() and future to be npf_cache_update()
-	 */
-	if (!npf_rwrip46(npc, nbuf, n_ptr, &src, dst)) {
-		return 0;
-	}
 	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
 		/* Done. */
 		return 0;
@@ -890,13 +804,6 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 		return EINVAL;
 	}
 
-	/*
-	 * Address translation: rewrite source/destination address, depending
-	 * on direction (PFIL_OUT - for source, PFIL_IN for destination).
-	 */
-	if (!npf_rwrip46(npc, nbuf, n_ptr, &src, dst)) {
-		return 0;
-	}
 	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
 		/* Done. */
 		return 0;
