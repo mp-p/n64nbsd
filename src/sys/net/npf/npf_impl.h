@@ -200,6 +200,8 @@ void		npf_npt_adj_sub(npf_netmask_t, npf_addr_t *, uint16_t);
 void		npf_v4_to_v6(npf_addr_t *, npf_addr_t *);
 void		npf_v6_to_v4(npf_addr_t *, npf_addr_t *);
 
+int		npf_icmp_translator(npf_cache_t *);
+
 int		npf_tcpsaw(const npf_cache_t *, tcp_seq *, tcp_seq *,
 		    uint32_t *);
 bool		npf_fetch_tcpopts(const npf_cache_t *, nbuf_t *,

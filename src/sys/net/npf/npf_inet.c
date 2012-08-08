@@ -268,7 +268,6 @@ npf_v6_to_v4(npf_addr_t *a, npf_addr_t *b)
 	a->s6_addr32[3] = 0x0; 
 }
 
-
 int
 npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
     npf_addr_t *src, npf_addr_t *dst)
@@ -345,6 +344,259 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 		return -1;
 	}
 
+	return 0;
+}
+
+/*
+ * I've stumbled upon ICMP translation function in OpenBSD source. So I'm
+ * borrowing it.
+ */
+
+int
+npf_icmp_translator(npf_cache_t *npc)
+{
+	struct icmp *icmp4;
+	struct icmp6_hdr *icmp6;
+	u_int32_t mtu;
+	int32_t ptr = -1;
+	u_int8_t type;
+	u_int8_t code;
+
+	switch (npc->npc_info) {
+	case NPC_IP6: {
+		icmp6 = &npc->npc_l4.icmp6;
+		type  = icmp6->icmp6_type;
+		code  = icmp6->icmp6_code;
+		mtu   = ntohl(icmp6->icmp6_mtu);
+
+		switch (type) {
+		case ICMP6_ECHO_REQUEST: {
+			type = ICMP_ECHO;
+			break;
+		}
+		case ICMP6_ECHO_REPLY: {
+			type = ICMP_ECHOREPLY;
+			break;
+		}
+		case ICMP6_DST_UNREACH: {
+			type = ICMP_UNREACH;
+			switch (code) {
+			case ICMP6_DST_UNREACH_NOROUTE:
+			case ICMP6_DST_UNREACH_BEYONDSCOPE:
+			case ICMP6_DST_UNREACH_ADDR: {
+				code = ICMP_UNREACH_HOST;
+				break;
+			}
+			case ICMP6_DST_UNREACH_ADMIN: {
+				code = ICMP_UNREACH_HOST_PROHIB;
+				break;
+			}
+			case ICMP6_DST_UNREACH_NOPORT: {
+				code = ICMP_UNREACH_PORT;
+				break;
+			}
+			default:
+				return (-1);
+			}
+			break;
+		}
+		case ICMP6_PACKET_TOO_BIG: {
+			type = ICMP_UNREACH;
+			code = ICMP_UNREACH_NEEDFRAG;
+			mtu -= 20;
+			break;
+		}
+		case ICMP6_TIME_EXCEEDED: {
+			type = ICMP_TIMXCEED;
+			break;
+		}
+		case ICMP6_PARAM_PROB: {
+			switch (code) {
+			case ICMP6_PARAMPROB_HEADER: {
+				type = ICMP_PARAMPROB;
+				code = ICMP_PARAMPROB_ERRATPTR;
+				ptr  = ntohl(icmp6->icmp6_pptr);
+
+				if (ptr == offsetof(struct ip6_hdr, ip6_vfc))
+					; /* preserve */
+				else if (ptr == offsetof(struct ip6_hdr, ip6_vfc) + 1)
+					ptr = offsetof(struct ip, ip_tos);
+				else if (ptr == offsetof(struct ip6_hdr, ip6_plen)
+				    || ptr == offsetof(struct ip6_hdr, ip6_plen) + 1)
+					ptr = offsetof(struct ip, ip_len);
+				else if (ptr == offsetof(struct ip6_hdr, ip6_nxt))
+					ptr = offsetof(struct ip, ip_p);
+				else if (ptr == offsetof(struct ip6_hdr, ip6_hlim))
+					ptr = offsetof(struct ip, ip_ttl);
+				else if (ptr >= offsetof(struct ip6_hdr, ip6_src)
+				    && ptr < offsetof(struct ip6_hdr, ip6_dst))
+					ptr = offsetof(struct ip, ip_src);
+				else if (ptr >= offsetof(struct ip6_hdr, ip6_dst)
+				    && ptr < sizeof(struct ip6_hdr))
+					ptr = offsetof(struct ip, ip_dst);
+				else
+					return -1;
+				break;
+			}
+			case ICMP6_PARAMPROB_NEXTHEADER: {
+				type = ICMP_UNREACH;
+				code = ICMP_UNREACH_PROTOCOL;
+				break;
+			}
+			default:
+				return -1;
+			}
+			break;
+		}
+		default:
+			return -1;
+		}
+		if (icmp6->icmp6_type != type) {
+			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
+			    icmp6->icmp6_type, type);
+			icmp6->icmp6_type = type;
+		}
+		if (icmp6->icmp6_code != code) {
+			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
+			    icmp6->icmp6_code, code);
+			icmp6->icmp6_code = code;
+		}
+		if (icmp6->icmp6_mtu != htonl(mtu)) {
+			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
+			    htons(ntohl(icmp6->icmp6_mtu)), htons(mtu));
+			/* aligns well with a icmpv4 nextmtu */
+			icmp6->icmp6_mtu = htonl(mtu);
+		}
+		if (ptr >= 0 && icmp6->icmp6_pptr != htonl(ptr)) {
+			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
+			    htons(ntohl(icmp6->icmp6_pptr)), htons(ptr));
+			/* icmpv4 pptr is a one most significant byte */
+			icmp6->icmp6_pptr = htonl(ptr << 24);
+		}
+		break;
+	}
+	case NPC_IP4: {
+		icmp4 = &npc->npc_l4.icmp;
+		type  = icmp4->icmp_type;
+		code  = icmp4->icmp_code;
+		mtu   = ntohs(icmp4->icmp_nextmtu);
+
+		switch (type) {
+		case ICMP_ECHO: {
+			type = ICMP6_ECHO_REQUEST;
+			break;
+		}
+		case ICMP_ECHOREPLY: {
+			type = ICMP6_ECHO_REPLY;
+			break;
+		}
+		case ICMP_UNREACH: {
+			type = ICMP6_DST_UNREACH;
+			switch (code) {
+			case ICMP_UNREACH_NET:
+			case ICMP_UNREACH_HOST:
+			case ICMP_UNREACH_NET_UNKNOWN:
+			case ICMP_UNREACH_HOST_UNKNOWN:
+			case ICMP_UNREACH_ISOLATED:
+			case ICMP_UNREACH_TOSNET:
+			case ICMP_UNREACH_TOSHOST: {
+				code = ICMP6_DST_UNREACH_NOROUTE;
+				break;
+			}
+			case ICMP_UNREACH_PORT: {
+				code = ICMP6_DST_UNREACH_NOPORT;
+				break;
+			}
+			case ICMP_UNREACH_NET_PROHIB:
+			case ICMP_UNREACH_HOST_PROHIB: {
+				code = ICMP6_DST_UNREACH_ADMIN;
+				break;
+			}
+			case ICMP_UNREACH_PROTOCOL: {
+				type = ICMP6_PARAM_PROB;
+				code = ICMP6_PARAMPROB_NEXTHEADER;
+				ptr  = offsetof(struct ip6_hdr, ip6_nxt);
+				break;
+			}
+			case ICMP_UNREACH_NEEDFRAG: {
+				type = ICMP6_PACKET_TOO_BIG;
+				code = 0;
+				mtu += 20;
+				break;
+			}
+			default:
+				return -1;
+			}
+			break;
+		}
+		case ICMP_TIMXCEED: {
+			type = ICMP6_TIME_EXCEEDED;
+			break;
+		}
+		case ICMP_PARAMPROB: {
+			type = ICMP6_PARAM_PROB;
+
+			switch (code) {
+			case ICMP_PARAMPROB_ERRATPTR: {
+				code = ICMP6_PARAMPROB_HEADER;
+				break;
+			}
+			case ICMP_PARAMPROB_LENGTH: {
+				code = ICMP6_PARAMPROB_HEADER;
+				break;
+			}
+			default:
+				return -1;
+			}
+
+			ptr = icmp4->icmp_pptr;
+			if (ptr == 0 || ptr == offsetof(struct ip, ip_tos))
+				; /* preserve */
+			else if (ptr == offsetof(struct ip, ip_len)
+			    || ptr == offsetof(struct ip, ip_len) + 1)
+				ptr = offsetof(struct ip6_hdr, ip6_plen);
+			else if (ptr == offsetof(struct ip, ip_ttl))
+				ptr = offsetof(struct ip6_hdr, ip6_hlim);
+			else if (ptr == offsetof(struct ip, ip_p))
+				ptr = offsetof(struct ip6_hdr, ip6_nxt);
+			else if (ptr >= offsetof(struct ip, ip_src)
+			    && ptr < offsetof(struct ip, ip_dst))
+				ptr = offsetof(struct ip6_hdr, ip6_src);
+			else if (ptr >= offsetof(struct ip, ip_dst)
+			    && ptr < sizeof(struct ip))
+				ptr = offsetof(struct ip6_hdr, ip6_dst);
+			else
+				return -1;
+			break;
+		}
+		default:
+			return -1;
+		}
+		if (icmp4->icmp_type != type) {
+			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
+			    icmp4->icmp_type, type);
+			icmp4->icmp_type = type;
+		}
+		if (icmp4->icmp_code != code) {
+			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
+			    icmp4->icmp_code, code);
+			icmp4->icmp_code = code;
+		}
+		if (icmp4->icmp_nextmtu != htons(mtu)) {
+			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
+			    icmp4->icmp_nextmtu, htons(mtu));
+			icmp4->icmp_nextmtu = htons(mtu);
+		}
+		if (ptr >= 0 && icmp4->icmp_void != ptr) {
+			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
+			    htons(icmp4->icmp_pptr), htons(ptr));
+			icmp4->icmp_void = htonl(ptr);
+		}
+		break;
+	}
+	default:
+		return -1;
+	}
 	return 0;
 }
 

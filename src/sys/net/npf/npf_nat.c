@@ -717,6 +717,8 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * that should do the hard stuff. Mean while need to study
 	 * the nbuf/mbuf a little bit more.
 	 */
+	if (npf_cache_ipproto(npc) == IPPROTO_ICMP)
+		npf_icmp_translator(npc);
 	
 	npf_af_translator(npc, &nbuf, &src, dst);
 
@@ -752,7 +754,7 @@ npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 			return EINVAL;
 		}
 		break;
-	case IPPROTO_ICMP:
+	case IPPROTO_ICMPV6: /* Now ICMPv4 should be cached as ICMPv6 */
 		KASSERT(npf_iscached(npc, NPC_ICMP));
 		/* Nothing */
 		break;
@@ -789,6 +791,9 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 	 * Now we have the same header madness but the other way around...
 	 */
 	
+	if (npf_cache_ipproto(npc) == IPPROTO_ICMPV6)
+		npf_icmp_translator(npc);
+
 	npf_af_translator(npc, &nbuf, &src, dst);
 
 	/* Execute ALG hook first. */
@@ -817,7 +822,7 @@ npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
 			return EINVAL;
 		}
 		break;
-	case IPPROTO_ICMP:
+	case IPPROTO_ICMP: /* Now ICMPv6 should be cached as ICMPv4 */
 		KASSERT(npf_iscached(npc, NPC_ICMP));
 		/* Nothing */
 		break;
