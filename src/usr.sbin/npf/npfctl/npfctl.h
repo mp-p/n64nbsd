@@ -161,8 +161,9 @@ int		npfctl_ncode_disassemble(nc_inf_t *, const void *, size_t);
 #define	NPFCTL_NAT_STATIC	2
 
 void		npfctl_config_init(bool);
-int		npfctl_config_send(int);
+int		npfctl_config_send(int, const char *);
 int		npfctl_config_show(int);
+unsigned long	npfctl_debug_addif(const char *);
 
 void		npfctl_build_rproc(const char *, npfvar_t *);
 void		npfctl_build_group(const char *, int, u_int);

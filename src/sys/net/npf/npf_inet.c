@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_inet.c,v 1.15 2012/07/19 21:52:29 spz Exp $	*/
+/*	$NetBSD: npf_inet.c,v 1.16 2012/07/21 17:11:01 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_inet.c,v 1.15 2012/07/19 21:52:29 spz Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_inet.c,v 1.16 2012/07/21 17:11:01 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -358,7 +358,7 @@ npf_icmp_translator(npf_cache_t *npc)
 	struct icmp *icmp4;
 	struct icmp6_hdr *icmp6;
 	u_int32_t mtu;
-	int32_t ptr = -1;
+	u_int32_t ptr = -1;
 	u_int8_t type;
 	u_int8_t code;
 
@@ -467,7 +467,7 @@ npf_icmp_translator(npf_cache_t *npc)
 			/* aligns well with a icmpv4 nextmtu */
 			icmp6->icmp6_mtu = htonl(mtu);
 		}
-		if (ptr >= 0 && icmp6->icmp6_pptr != htonl(ptr)) {
+		if (icmp6->icmp6_pptr != htonl(ptr)) {
 			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
 			    htons(ntohl(icmp6->icmp6_pptr)), htons(ptr));
 			/* icmpv4 pptr is a one most significant byte */
@@ -587,7 +587,7 @@ npf_icmp_translator(npf_cache_t *npc)
 			    icmp4->icmp_nextmtu, htons(mtu));
 			icmp4->icmp_nextmtu = htons(mtu);
 		}
-		if (ptr >= 0 && icmp4->icmp_void != ptr) {
+		if ((uint32_t)icmp4->icmp_void != ptr) {
 			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
 			    htons(icmp4->icmp_pptr), htons(ptr));
 			icmp4->icmp_void = htonl(ptr);
@@ -699,7 +699,7 @@ next:
 		if (nbuf_advfetch(&nbuf, &n_ptr, 1, sizeof(val), &val)) {
 			return false;
 		}
-		if (val < 2 || val >= topts_len) {
+		if (val < 2 || val > topts_len) {
 			return false;
 		}
 		topts_len -= val;
@@ -979,7 +979,6 @@ npf_rwrport(npf_cache_t *npc, nbuf_t *nbuf, void *n_ptr, const int di,
 	in_port_t *oport;
 
 	KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
-
 	KASSERT(proto == IPPROTO_TCP || proto == IPPROTO_UDP);
 
 	/* Offset to the port and pointer in the cache. */

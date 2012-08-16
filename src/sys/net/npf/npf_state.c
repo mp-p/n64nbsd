@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_state.c,v 1.9 2012/07/01 23:21:06 rmind Exp $	*/
+/*	$NetBSD: npf_state.c,v 1.12 2012/08/15 19:47:38 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2010-2012 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_state.c,v 1.9 2012/07/01 23:21:06 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_state.c,v 1.12 2012/08/15 19:47:38 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -75,6 +75,16 @@ static u_int npf_generic_timeout[] __read_mostly = {
 };
 
 /*
+ * State sampler for debugging.
+ */
+#if defined(_NPF_TESTING)
+static void (*npf_state_sample)(npf_state_t *, bool) = NULL;
+#define	NPF_STATE_SAMPLE(n, r) if (npf_state_sample) (*npf_state_sample)(n, r);
+#else
+#define	NPF_STATE_SAMPLE(n, r)
+#endif
+
+/*
  * npf_state_init: initialise the state structure.
  *
  * Should normally be called on a first packet, which also determines the
@@ -107,6 +117,7 @@ npf_state_init(const npf_cache_t *npc, nbuf_t *nbuf, npf_state_t *nst)
 	default:
 		ret = false;
 	}
+	NPF_STATE_SAMPLE(nst, ret);
 	return ret;
 }
 
@@ -147,7 +158,7 @@ npf_state_inspect(const npf_cache_t *npc, nbuf_t *nbuf,
 	default:
 		ret = false;
 	}
-	NPF_TCP_STATE_SAMPLE(nst, ret);
+	NPF_STATE_SAMPLE(nst, ret);
 	mutex_exit(&nst->nst_lock);
 
 	return ret;
@@ -194,3 +205,11 @@ npf_state_dump(const npf_state_t *nst)
 	);
 #endif
 }
+
+#if defined(_NPF_TESTING)
+void
+npf_state_setsampler(void (*func)(npf_state_t *, bool))
+{
+	npf_state_sample = func;
+}
+#endif

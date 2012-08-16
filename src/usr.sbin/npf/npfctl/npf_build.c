@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_build.c,v 1.12 2012/07/19 21:52:29 spz Exp $	*/
+/*	$NetBSD: npf_build.c,v 1.13 2012/08/12 03:35:13 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2011-2012 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: npf_build.c,v 1.12 2012/07/19 21:52:29 spz Exp $");
+__RCSID("$NetBSD: npf_build.c,v 1.13 2012/08/12 03:35:13 rmind Exp $");
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -63,14 +63,13 @@ npfctl_config_init(bool debug)
 }
 
 int
-npfctl_config_send(int fd)
+npfctl_config_send(int fd, const char *out)
 {
 	int error;
 
-	if (!fd) {
-		const char *outconf = "/tmp/npf.plist";
-		_npf_config_setsubmit(npf_conf, outconf);
-		printf("\nSaving to %s\n", outconf);
+	if (out) {
+		_npf_config_setsubmit(npf_conf, out);
+		printf("\nSaving to %s\n", out);
 	}
 	if (!defgroup_set) {
 		errx(EXIT_FAILURE, "default group was not defined");
@@ -83,6 +82,24 @@ npfctl_config_send(int fd)
 	}
 	npf_config_destroy(npf_conf);
 	return error;
+}
+
+unsigned long
+npfctl_debug_addif(const char *ifname)
+{
+	char tname[] = "npftest";
+	const size_t tnamelen = sizeof(tname) - 1;
+
+	if (!npf_debug || strncmp(ifname, tname, tnamelen) != 0) {
+		return 0;
+	}
+	struct ifaddrs ifa = {
+		.ifa_name = __UNCONST(ifname),
+		.ifa_flags = 0
+	};
+	unsigned long if_idx = atol(ifname + tnamelen) + 1;
+	_npf_debug_addif(npf_conf, &ifa, if_idx);
+	return if_idx;
 }
 
 bool
@@ -386,9 +403,6 @@ npfctl_build_rpcall(nl_rproc_t *rp, const char *name, npfvar_t *args)
 
 		if (log) {
 			u_int if_idx = npfctl_find_ifindex(aval);
-			if (!if_idx) {
-				yyerror("unknown interface '%s'", aval);
-			}
 			_npf_rproc_setlog(rp, if_idx);
 			return;
 		}

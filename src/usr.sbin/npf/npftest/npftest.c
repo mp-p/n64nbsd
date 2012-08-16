@@ -178,6 +178,8 @@ main(int argc, char **argv)
 	rump_init();
 	rump_schedule();
 
+	rumpns_npf_test_init();
+
 	if (config) {
 		load_npf_config(config);
 	}
