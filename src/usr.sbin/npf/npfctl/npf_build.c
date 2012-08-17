@@ -503,6 +503,7 @@ npfctl_build_map(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 {
 	fam_addr_mask_t *am1 = NULL, *am2 = NULL;
 	filt_opts_t imfopts;
+	in_port_t port = 0;
 
 	assert(if_idx != 0);
 	
@@ -558,11 +559,13 @@ npfctl_build_map(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 			npfctl_build_nat66(type, if_idx, am1, am2, fopts);
 		} else if (((type & NPF_NATIN) && (am1->fam_family == AF_INET))
 		    || ((type & NPF_NATOUT) && (am2->fam_family == AF_INET))) {
-			in_port_t port = 0;
-			if ((type & NPF_NATIN) && (!ap1->ap_portrange)) {
-				yyerror("inbound port is not specified");
-			} else {
-				port = npfctl_get_singleport(ap1->ap_portrange);
+			if (type & NPF_NATIN) {
+				if (!(type & NPF_NATOUT)) { 
+					if (!ap1->ap_portrange) {
+						yyerror("inbound port is not specified");
+					}
+					port = npfctl_get_singleport(ap1->ap_portrange);
+				}
 			}
 			npfctl_build_nat44(type, if_idx, am1, am2, fopts, port);
 		} else {
@@ -598,8 +601,8 @@ npfctl_build_nat44(int type, u_int if_idx, fam_addr_mask_t *am1,
 		 * is local IP and filter criteria is inverted accordingly.
 		 */
 		nat = npf_nat_create(NPF_NATIN, 0, if_idx,
-		    &am1->fam_addr, am1->fam_family, 0);
-		npfctl_build_ncode(nat, AF_INET, &op, fopts, true);
+		    &am1->fam_addr, am1->fam_family, port);
+		npfctl_build_ncode(nat, AF_INET, &op, fopts, false);
 		npf_nat_insert(npf_conf, nat, NPF_PRI_NEXT);
 		/* FALLTHROUGH */
 
@@ -611,7 +614,7 @@ npfctl_build_nat44(int type, u_int if_idx, fam_addr_mask_t *am1,
 		 */
 		nat = npf_nat_create(NPF_NATOUT, type == NPF_NATOUT ?
 		    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
-		    if_idx, &am2->fam_addr, am2->fam_family, 0);
+		    if_idx, &am2->fam_addr, am2->fam_family, port);
 		break;
 
 	default:
