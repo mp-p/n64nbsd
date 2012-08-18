@@ -541,7 +541,7 @@ npf_nat_create(int type, u_int flags, u_int if_idx,
 	}
 	prop_dictionary_set(rldict, "translation-ip", addrdat);
 	prop_object_release(addrdat);
-	if (flags == NPF_NAT_66) {
+	if (flags & NPF_NAT_66) {
 		prop_dictionary_set_uint8(rldict, "prefix", 48);
 		/*
 		 * Just not for now...

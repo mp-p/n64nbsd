@@ -207,8 +207,10 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 
 	/* Translation type and flags. */
 	prop_dictionary_get_int32(natdict, "type", &np->n_type);
-	switch (np->n_type) {
-	case NPF_NAT_66: 	/* 66 is the NPT part */
+	prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
+
+	if (np->n_flags & NPF_NAT_66) {
+		/* 66 is the NPT part */
 		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 		cv_init(&np->n_cv, "npfnatcv");
 		LIST_INIT(&np->n_nat_list);
@@ -233,9 +235,7 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 
 		prop_dictionary_get_uint8(natdict, "prefix", &np->n_px);
 
-		break;
-	default:
-		prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
+	} else {
 
 		/* Should be exclusively either inbound or outbound NAT. */
 		if (((np->n_type == NPF_NATIN) ^ (np->n_type == NPF_NATOUT)) == 0) {
@@ -275,7 +275,6 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		} else {
 			KASSERT(np->n_portmap != NULL);
 		}
-		break;
 	}
 	return np;
 }
