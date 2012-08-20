@@ -24,10 +24,10 @@
 #define	REMOTE_IP1	"192.0.2.3"
 #define	REMOTE_IP2	"192.0.2.4"
 
-#define SIX_IP1		"2001:dead::11"
-#define SIX_IP2		"2001:beef::22"
+#define SIX_IP1		"fde6:d16f:eb95::11"
+#define SIX_IP2		"fd16:77d7:49dd::22"
 
-#define SIX_IP1_ADJ	"2001:beef:0:ffff::11" /* Calculated from RFC (?) */
+#define SIX_IP1_ADJ	"fd16:77d7:49dd:fc20::11" /* Calculated from RFC 6146 */
 
 #define	RESULT_PASS	0
 #define	RESULT_BLOCK	ENETUNREACH

@@ -348,8 +348,11 @@ npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
 }
 
 /*
- * I've stumbled upon ICMP translation function in OpenBSD source. So I'm
- * borrowing it.
+ * I've stumbled upon ICMP translation function pf_translate_icmp 
+ * in OpenBSD source (sys/net/pf.c).
+ * It was sent to tech@OpenBSD mailing list by Mike Belopuhov:
+ * http://old.nabble.com/NAT64-p31297635.html
+ * So I'm borrowing it with changes.
  */
 
 int

@@ -218,7 +218,7 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		/* I don't know what to do with n_addr_sz which for sanity
 		 * should be divided in to two parts (from,to). But currently
 		 * it doesn't matter - both addresses are the same length.
-		 * "looking ok" spz
+		 * "looking ok" spz; now it might look bad...
 		 */
 
 		/* IP to which translete */
