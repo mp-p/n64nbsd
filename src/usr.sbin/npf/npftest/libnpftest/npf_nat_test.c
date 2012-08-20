@@ -13,6 +13,7 @@
 
 #define	IFNAME_EXT	"npftest0"
 #define	IFNAME_INT	"npftest1"
+#define IFNAME_SIX	"npftest2"
 
 #define	LOCAL_IP1	"10.1.1.1"
 #define	LOCAL_IP2	"10.1.1.2"
@@ -22,6 +23,9 @@
 #define	PUB_IP2		"192.0.2.2"
 #define	REMOTE_IP1	"192.0.2.3"
 #define	REMOTE_IP2	"192.0.2.4"
+
+#define SIX_IP1		"2001:dead::11"
+#define SIX_IP2		"2001:beef::22"
 
 #define	RESULT_PASS	0
 #define	RESULT_BLOCK	ENETUNREACH
@@ -114,6 +118,16 @@ static const struct test_case {
 		REMOTE_IP2,	9000,		PUB_IP2,	18000,
 		NPF_BINAT,	IFNAME_EXT,	PFIL_IN,
 		RESULT_PASS,	LOCAL_IP2,	18000
+	},
+
+	/*
+	 * Network Prefix Translation:
+	 *	map $six_if static $six_ip1 <-> $six_ip2
+	 */
+	{
+		SIX_IP2,	17000,		SIX_IP1,	9000,
+		NPF_BINAT,	IFNAME_SIX,	PFIL_IN,
+		RESULT_PASS,	SIX_IP1,	9000
 	},
 
 };
