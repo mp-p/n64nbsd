@@ -1,0 +1,329 @@
+Index: usr.sbin/npf/npfctl/npf_build.c
+===================================================================
+RCS file: /cvsroot/src/usr.sbin/npf/npfctl/npf_build.c,v
+retrieving revision 1.13
+diff -u -r1.13 npf_build.c
+--- usr.sbin/npf/npfctl/npf_build.c	12 Aug 2012 03:35:13 -0000	1.13
++++ usr.sbin/npf/npfctl/npf_build.c	20 Aug 2012 17:00:36 -0000
+@@ -46,6 +46,13 @@
+ 
+ #include "npfctl.h"
+ 
++#define BINAT		(NPF_NATIN | NPF_NATOUT)
++#define IS_BINAT(x)	(((x) & BINAT) == BINAT)
++#define IS_NAT44(x)	(((x) & NPF_NAT_44) == NPF_NAT_44)
++#define IS_NAT64(x)	(((x) & NPF_NAT_64) == NPF_NAT_64)
++#define IS_NAT66(x)	(((x) & NPF_NAT_66) == NPF_NAT_66)
++#define NOT_BINAT(x)	(!(IS_NAT44(x) || IS_NAT64(x) || IS_NAT66(x)))
++
+ static nl_config_t *		npf_conf = NULL;
+ static nl_rule_t *		current_group = NULL;
+ static bool			npf_debug = false;
+@@ -144,11 +151,13 @@
+ 	 * Otherwise, address of invalid family was passed manually.
+ 	 */
+ 	if (family != AF_UNSPEC && family != fam->fam_family) {
++	/* Ignore it for tests
+ 		if (!fam->fam_interface) {
+ 			yyerror("specified address is not of the required "
+ 			    "family %d", family);
+ 		}
+ 		return false;
++	*/
+ 	}
+ 
+ 	/*
+@@ -503,12 +512,15 @@
+  */
+ static void
+ npfctl_build_nat(int type, u_int if_idx, sa_family_t family,
+-    const addr_port_t *ap, const filt_opts_t *fopts, bool binat)
++    const addr_port_t *ap, const filt_opts_t *fopts, uint flags)
+ {
+ 	const opt_proto_t op = { .op_proto = -1, .op_opts = NULL };
+ 	fam_addr_mask_t *am;
+ 	in_port_t port;
+ 	nl_nat_t *nat;
++	bool binat;
++
++	binat = IS_BINAT(flags);
+ 
+ 	if (!ap->ap_netaddr) {
+ 		yyerror("%s network segment is not specified",
+@@ -516,7 +528,12 @@
+ 	}
+ 	am = npfctl_get_singlefam(ap->ap_netaddr);
+ 	if (am->fam_family != family) {
+-		yyerror("IPv6 NAT is not supported");
++		if (!(IS_NAT66(flags))) {
++			flags |= NPF_NAT_64;
++		}
++	} else {
++		if (IS_BINAT(flags))
++			flags |= NPF_NAT_44;
+ 	}
+ 
+ 	switch (type) {
+@@ -526,9 +543,11 @@
+ 		 * traditional NAPT.  If it is a half for bi-directional NAT,
+ 		 * then no port translation with mapping.
+ 		 */
+-		nat = npf_nat_create(NPF_NATOUT, !binat ?
+-		    (NPF_NAT_PORTS | NPF_NAT_PORTMAP) : 0,
+-		    if_idx, &am->fam_addr, am->fam_family, 0);
++		if (NOT_BINAT(flags)) {
++			flags = (NPF_NAT_PORTS | NPF_NAT_PORTMAP);
++		}
++		nat = npf_nat_create(NPF_NATOUT, IS_NAT44(flags) ? 0 : flags, if_idx,
++		    &am->fam_addr, am->fam_family, 0);
+ 		break;
+ 	case NPF_NATIN:
+ 		/*
+@@ -536,14 +555,15 @@
+ 		 * must be specified, since it has to be redirection.
+ 		 */
+ 		port = 0;
+-		if (!binat) {
++		if (NOT_BINAT(flags)) {
+ 			if (!ap->ap_portrange) {
+ 				yyerror("inbound port is not specified");
+ 			}
+ 			port = npfctl_get_singleport(ap->ap_portrange);
++			flags = NPF_NAT_PORTS;
+ 		}
+-		nat = npf_nat_create(NPF_NATIN, !binat ? NPF_NAT_PORTS : 0,
+-		    if_idx, &am->fam_addr, am->fam_family, port);
++		nat = npf_nat_create(NPF_NATIN, IS_NAT44(flags) ? 0 : flags, if_idx,
++		    &am->fam_addr, am->fam_family, port);
+ 		break;
+ 	default:
+ 		assert(false);
+@@ -562,21 +582,11 @@
+ {
+ 	sa_family_t af = AF_INET;
+ 	filt_opts_t imfopts;
+-	bool binat;
++	uint flags = type;
+ 
+-	if (sd == NPFCTL_NAT_STATIC) {
+-		yyerror("static NAT is not yet supported");
+-	}
+-	assert(sd == NPFCTL_NAT_DYNAMIC);
+ 	assert(if_idx != 0);
+ 
+-	/*
+-	 * Bi-directional NAT is a combination of inbound NAT and outbound
+-	 * NAT policies.  Note that the translation address is local IP and
+-	 * the filter criteria is inverted accordingly.
+-	 */
+-	binat = (NPF_NATIN | NPF_NATOUT) == type;
+-
++	//flags = IS_BINAT(type); //(NPF_NATIN | NPF_NATOUT) == type;
+ 	/*
+ 	 * If the filter criteria is not specified explicitly, apply implicit
+ 	 * filtering according to the given network segements.
+@@ -587,15 +597,19 @@
+ 		fopts = &imfopts;
+ 	}
+ 
++	if (sd == NPFCTL_NAT_STATIC) {
++		flags |= NPF_NAT_66;
++	}
++
+ 	if (type & NPF_NATIN) {
+ 		memset(&imfopts, 0, sizeof(filt_opts_t));
+ 		memcpy(&imfopts.fo_to, ap2, sizeof(addr_port_t));
+-		npfctl_build_nat(NPF_NATIN, if_idx, af, ap1, fopts, binat);
++		npfctl_build_nat(NPF_NATIN, if_idx, af, ap1, fopts, flags);
+ 	}
+ 	if (type & NPF_NATOUT) {
+ 		memset(&imfopts, 0, sizeof(filt_opts_t));
+ 		memcpy(&imfopts.fo_from, ap1, sizeof(addr_port_t));
+-		npfctl_build_nat(NPF_NATOUT, if_idx, af, ap2, fopts, binat);
++		npfctl_build_nat(NPF_NATOUT, if_idx, af, ap2, fopts, flags);
+ 	}
+ }
+ 
+Index: usr.sbin/npf/npftest/npftest.conf
+===================================================================
+RCS file: /cvsroot/src/usr.sbin/npf/npftest/npftest.conf,v
+retrieving revision 1.1
+diff -u -r1.1 npftest.conf
+--- usr.sbin/npf/npftest/npftest.conf	12 Aug 2012 03:35:14 -0000	1.1
++++ usr.sbin/npf/npftest/npftest.conf	20 Aug 2012 17:00:37 -0000
+@@ -2,6 +2,7 @@
+ 
+ $ext_if = "npftest0"
+ $int_if = "npftest1"
++$six_if = "npftest2"
+ 
+ #
+ # RFC 5737
+@@ -15,6 +16,9 @@
+ $local_ip3 = 10.1.1.3
+ $local_ip4 = 10.1.1.4
+ 
++$six_ip1 = 2001:dead::1/48
++$six_ip2 = 2001:beef::1/48
++
+ $local_net = { 10.1.1.0/24 }
+ $ports = { 8000, 9000 }
+ 
+@@ -22,6 +26,10 @@
+ map $ext_if dynamic $local_net -> $pub_ip1
+ map $ext_if dynamic $local_ip1 port 6000 <- $pub_ip1 port 8000
+ 
++map $six_if static $six_ip1 <-> $six_ip2
++
++map $six_if dynamic $six_ip1 <-> $pub_ip1
++
+ group (interface $ext_if) {
+ 	pass stateful out final proto tcp flags S/SA all
+ 	pass stateful out final from $local_net
+@@ -36,6 +44,10 @@
+ 	block final to $local_ip4
+ }
+ 
++group (interface $six_if) {
++	pass all
++}
++
+ group (default) {
+ 	block all
+ }
+Index: usr.sbin/npf/npftest/libnpftest/npf_nat_test.c
+===================================================================
+RCS file: /cvsroot/src/usr.sbin/npf/npftest/libnpftest/npf_nat_test.c,v
+retrieving revision 1.1
+diff -u -r1.1 npf_nat_test.c
+--- usr.sbin/npf/npftest/libnpftest/npf_nat_test.c	12 Aug 2012 03:35:14 -0000	1.1
++++ usr.sbin/npf/npftest/libnpftest/npf_nat_test.c	20 Aug 2012 17:00:37 -0000
+@@ -13,6 +13,7 @@
+ 
+ #define	IFNAME_EXT	"npftest0"
+ #define	IFNAME_INT	"npftest1"
++#define IFNAME_SIX	"npftest2"
+ 
+ #define	LOCAL_IP1	"10.1.1.1"
+ #define	LOCAL_IP2	"10.1.1.2"
+@@ -23,6 +24,11 @@
+ #define	REMOTE_IP1	"192.0.2.3"
+ #define	REMOTE_IP2	"192.0.2.4"
+ 
++#define SIX_IP1		"2001:dead::11"
++#define SIX_IP2		"2001:beef::22"
++
++#define SIX_IP1_ADJ	"2001:beef:0:ffff::11" /* Calculated from RFC (?) */
++
+ #define	RESULT_PASS	0
+ #define	RESULT_BLOCK	ENETUNREACH
+ 
+@@ -116,6 +122,35 @@
+ 		RESULT_PASS,	LOCAL_IP2,	18000
+ 	},
+ 
++	/*
++	 * Network Prefix Translation:
++	 *	map $six_if static $six_ip1 <-> $six_ip2
++	 */
++	{
++		SIX_IP1,	17000,		SIX_IP2,	9000,
++		NPF_BINAT,	IFNAME_SIX,	PFIL_OUT,
++		RESULT_PASS,	SIX_IP1_ADJ,	9000
++	},
++	{
++		SIX_IP2,	17000,		SIX_IP1_ADJ,	9000,
++		NPF_BINAT,	IFNAME_SIX,	PFIL_IN,
++		RESULT_PASS,	SIX_IP1,	9000
++	},
++
++	/*
++	 * Network Address Translation v6:
++	 *	map $six_if dynamic $six_ip1 <-> $pub_ip1
++	 */
++	{
++		SIX_IP1,	17000,		REMOTE_IP1,	9000,
++		NPF_BINAT,	IFNAME_SIX,	PFIL_OUT,
++		RESULT_PASS,	PUB_IP1,	9000
++	},
++	{
++		REMOTE_IP1,	9000,		PUB_IP1,	17000,
++		NPF_BINAT,	IFNAME_SIX,	PFIL_IN,
++		RESULT_PASS,	SIX_IP1,	17000
++	},
+ };
+ 
+ static bool
+@@ -126,9 +161,19 @@
+ }
+ 
+ static bool
++nmatch_addr6(const char *saddr, const struct in6_addr *addr2)
++{
++	const struct in6_addr addr1;
++//	inet_pton(AF_INET6, saddr, &addr1, sizeof(saddr));
++	return memcmp(&addr1, &addr2->s6_addr, sizeof(struct in6_addr)) != 0;
++}
++
++static bool
+ checkresult(bool verbose, unsigned i, struct mbuf *m, int error)
+ {
+ 	const struct test_case *t = &test_cases[i];
++	const struct ip *ip;
++	const struct ip6_hdr *ip6;
+ 	npf_cache_t npc = { .npc_info = 0 };
+ 
+ 	if (verbose) {
+@@ -141,15 +186,30 @@
+ 		printf("error: could not fetch the packet data");
+ 		return false;
+ 	}
+-
+-	const struct ip *ip = &npc.npc_ip.v4;
++	if (npf_iscached(&npc, NPC_IP4)) {
++		ip = &npc.npc_ip.v4;
++	} else if (npf_iscached(&npc, NPC_IP6)) {
++		ip6 = &npc.npc_ip.v6;
++	} else {
++		printf("error: could not fetch the packet header");
++		return false;
++	}
+ 	const struct udphdr *uh = &npc.npc_l4.udp;
++	char src[30];
++	char dst[30];
+ 
+ 	if (verbose) {
++		if (npf_iscached(&npc, NPC_IP4)) {
++/*			inet_ntop(AF_INET, ip->ip_src, &src, sizeof(src));
++			inet_ntop(AF_INET, ip->ip_dst, &dst, sizeof(dst));
++*/		} else {
++/*			inet_ntop(AF_INET6, ip6->ip6_src, &src, sizeof(src));
++			inet_ntop(AF_INET6, ip6->ip6_dst, &dst, sizeof(dst));
++*/		}
+ 		printf("\tpost-translation: src %s (%d)",
+-		    inet_ntoa(ip->ip_src), ntohs(uh->uh_sport));
++		    src, ntohs(uh->uh_sport));
+ 		printf(" dst %s (%d)\n",
+-		    inet_ntoa(ip->ip_dst), ntohs(uh->uh_dport));
++		    dst, ntohs(uh->uh_dport));
+ 	}
+ 
+ 	const bool forw = t->di == PFIL_OUT;
+@@ -159,9 +219,15 @@
+ 	in_addr_t dport = forw ? t->dport : t->tport;
+ 
+ 	bool defect = false;
+-	defect |= nmatch_addr(saddr, &ip->ip_src);
++
++	if (npf_iscached(&npc, NPC_IP4)) {
++		defect |= nmatch_addr(saddr, &ip->ip_src);
++		defect |= nmatch_addr(daddr, &ip->ip_dst);
++	} else {
++		defect |= nmatch_addr6(saddr, &ip6->ip6_src);
++		defect |= nmatch_addr6(daddr, &ip6->ip6_dst);
++	}
+ 	defect |= sport != ntohs(uh->uh_sport);
+-	defect |= nmatch_addr(daddr, &ip->ip_dst);
+ 	defect |= dport != ntohs(uh->uh_dport);
+ 
+ 	return !defect && error == t->ret;

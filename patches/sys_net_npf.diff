@@ -1,0 +1,1037 @@
+Index: sys/net/npf/npf.h
+===================================================================
+RCS file: /cvsroot/src/sys/net/npf/npf.h,v
+retrieving revision 1.20
+diff -u -r1.20 npf.h
+--- sys/net/npf/npf.h	19 Jul 2012 21:52:29 -0000	1.20
++++ sys/net/npf/npf.h	20 Aug 2012 16:59:02 -0000
+@@ -168,6 +168,10 @@
+ 
+ #define	NPF_NAT_PORTS			0x01
+ #define	NPF_NAT_PORTMAP			0x02
++#define NPF_NAT_44			0x04
++#define NPF_NAT_46			0x08
++#define NPF_NAT_64			0x10
++#define NPF_NAT_66			0x20
+ 
+ /* Table types. */
+ #define	NPF_TABLE_HASH			1
+Index: sys/net/npf/npf_impl.h
+===================================================================
+RCS file: /cvsroot/src/sys/net/npf/npf_impl.h,v
+retrieving revision 1.22
+diff -u -r1.22 npf_impl.h
+--- sys/net/npf/npf_impl.h	15 Aug 2012 19:47:38 -0000	1.22
++++ sys/net/npf/npf_impl.h	20 Aug 2012 16:59:02 -0000
+@@ -168,6 +168,8 @@
+ 
+ bool		npf_rwrip(npf_cache_t *, nbuf_t *, void *, const int,
+ 		    npf_addr_t *);
++bool		npf_rwrip46(npf_cache_t *, nbuf_t *, void *,
++		    npf_addr_t *, npf_addr_t *);
+ bool		npf_rwrport(npf_cache_t *, nbuf_t *, void *, const int,
+ 		    in_port_t);
+ bool		npf_rwrcksum(npf_cache_t *, nbuf_t *, void *, const int,
+@@ -182,6 +184,17 @@
+ void		npf_addr_mask(const npf_addr_t *, const npf_netmask_t,
+ 		    const int, npf_addr_t *);
+ 
++/* NPT adjustment calculation functions */
++uint16_t	npf_npt_adj_calc(const npf_netmask_t, const npf_addr_t *,
++		    const npf_addr_t *);
++void		npf_npt_adj_add(npf_netmask_t, npf_addr_t *, uint16_t);
++void		npf_npt_adj_sub(npf_netmask_t, npf_addr_t *, uint16_t);
++
++void		npf_v4_to_v6(npf_addr_t *, npf_addr_t *);
++void		npf_v6_to_v4(npf_addr_t *, npf_addr_t *);
++
++int		npf_icmp_translator(npf_cache_t *);
++
+ int		npf_tcpsaw(const npf_cache_t *, tcp_seq *, tcp_seq *,
+ 		    uint32_t *);
+ bool		npf_fetch_tcpopts(const npf_cache_t *, nbuf_t *,
+@@ -299,8 +312,15 @@
+ bool		npf_nat_sharepm(npf_natpolicy_t *, npf_natpolicy_t *);
+ void		npf_nat_freealg(npf_natpolicy_t *, npf_alg_t *);
+ 
++int		npf_af_translator(npf_cache_t *, nbuf_t **,
++		    npf_addr_t *, npf_addr_t *);
+ int		npf_do_nat(npf_cache_t *, npf_session_t *, nbuf_t *,
+ 		    const ifnet_t *, const int);
++int		npf_do_nat46(npf_cache_t *, npf_session_t *, nbuf_t *,
++		    const ifnet_t *, const int);
++int		npf_do_nat64(npf_cache_t *, npf_session_t *, nbuf_t *,
++		    const ifnet_t *, const int);
++int		npf_do_npt(npf_cache_t *, nbuf_t *, const ifnet_t *, const int);
+ void		npf_nat_expire(npf_nat_t *);
+ void		npf_nat_getorig(npf_nat_t *, npf_addr_t **, in_port_t *);
+ void		npf_nat_gettrans(npf_nat_t *, npf_addr_t **, in_port_t *);
+Index: sys/net/npf/npf_inet.c
+===================================================================
+RCS file: /cvsroot/src/sys/net/npf/npf_inet.c,v
+retrieving revision 1.16
+diff -u -r1.16 npf_inet.c
+--- sys/net/npf/npf_inet.c	21 Jul 2012 17:11:01 -0000	1.16
++++ sys/net/npf/npf_inet.c	20 Aug 2012 16:59:02 -0000
+@@ -179,6 +179,428 @@
+ }
+ 
+ /*
++ * npf_npt_adj_calc: calculates address adjustment for NPTv6 prefix translation.
++ * NOTICE: Currently it should be used only for /48 prefix translation.
++ */
++uint16_t
++npf_npt_adj_calc(const npf_netmask_t px, const npf_addr_t *ia, const npf_addr_t *oa)
++{
++	int adj, sia, soa, max_dwrds, i;
++
++	sia = 0;
++	soa = 0;
++	max_dwrds = px >> 4;
++
++	KASSERT(px > 0 && px < NPF_MAX_NETMASK && ia != NULL && oa != NULL);
++	
++	for (i = 0; i < max_dwrds; i++) {
++		sia += ia->s6_addr16[i];
++		soa += oa->s6_addr16[i];
++	}
++
++	while (0xFFFF <= sia)
++		sia = sia + 1 - 0x10000;
++	while (0xFFFF <= soa)
++		soa = soa + 1 - 0x10000;
++
++	adj = sia - soa;
++
++	while (0xFFFF <= adj)
++		adj = adj + 1 - 0x10000;
++
++	return adj;
++}
++
++/*
++ * npf_npt_adj_add: adds npt adjustment to proper IPv6 address part.
++ * NOTICE: Currently it should be used only for /48 prefix translation.
++ */
++void
++npf_npt_adj_add(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
++{
++	int dw, ap; 
++	
++	dw = px >> 4;
++	ap = a->s6_addr16[dw];
++
++	ap += adj;
++
++	while (0xFFFF <= ap)
++		ap = ap + 1 - 0x10000;
++
++	a->s6_addr16[dw] = ap;
++}
++
++/*
++ * npf_npt_adj_sub: sublimates npt adjustment from propper address
++ * part. Basicaly it is addition with negative adjustment.
++ * NOTICE: The same limitations as npf_npt_adj_add.
++ */
++void
++npf_npt_adj_sub(npf_netmask_t px, npf_addr_t *a, uint16_t adj)
++{
++	npf_npt_adj_add(px, a, ~adj);
++}
++
++/*
++ * Combine Well-Known-Prefix with IPv4 address.
++ */
++void
++npf_v4_to_v6(npf_addr_t *a, npf_addr_t *b)
++{
++	a->s6_addr32[0] = 0x0064ff96; 
++	a->s6_addr32[1] = 0x0; 
++	a->s6_addr32[2] = 0x0; 
++	/* I'm assuming that IPv4 is sitting in first 32bits of npf_addr_t */
++	a->s6_addr32[3] = b->s6_addr32[0];
++}
++
++/*
++ * Extract IPv4 address from Well-Known-Prefixed IPv6 address.
++ */
++void
++npf_v6_to_v4(npf_addr_t *a, npf_addr_t *b)
++{
++	/* I'm assuming that IPv4 is sitting in first 32bits of npf_addr_t */
++	a->s6_addr32[0] = b->s6_addr32[3];
++	a->s6_addr32[1] = 0x0; 
++	a->s6_addr32[2] = 0x0; 
++	a->s6_addr32[3] = 0x0; 
++}
++
++int
++npf_af_translator(npf_cache_t *npc, nbuf_t **nbuf,
++    npf_addr_t *src, npf_addr_t *dst)
++{
++	struct mbuf *m = *nbuf;
++	struct ip *ip4;
++	struct ip6_hdr *ip6;
++	size_t hlen;
++
++	/* Cut off the old header. Currently don't know what the
++	 * second parameter should be. Should I use offsetof()
++	 * somehow?
++	 */
++	m_adj(m, 0);
++
++	if (npc->npc_info == NPC_IP6) {
++		hlen = sizeof(*ip4);
++	} else {
++		hlen = sizeof(*ip6);
++	}
++
++	if ((m_prepend(m, hlen, M_DONTWAIT)) == NULL) {
++		nbuf = NULL;
++		return -1;
++	}
++
++	switch(npc->npc_info) {
++
++	case NPC_IP6: {
++		/* Translating from IPv6 to IPv4 */
++		ip4 = mtod(m, struct ip *);
++		bzero(ip4, hlen);
++		ip4->ip_v	= IPVERSION;
++		ip4->ip_hl	= hlen >> 2;
++		ip4->ip_len	= htons(hlen + npc->npc_ip.v6.ip6_plen);
++		/* ip4->ip_id	= random() & UINT16_MAX; ??? */
++		/* ip4->ip_off	= ???; */
++		/* Taking TTL from v6 hop limit */
++		ip4->ip_ttl	= npc->npc_ip.v6.ip6_hlim;
++		ip4->ip_p	= npc->npc_next_proto;
++		ip4->ip_src.s_addr	= (in_addr_t)src->s6_addr32[0];
++		ip4->ip_dst.s_addr	= (in_addr_t)dst->s6_addr32[0];
++		/* Now we have IPv4 header ready for action */
++		break;
++	}
++
++	case NPC_IP4: {
++		/* Translating from IPv4 to IPv6 */
++		ip6 = mtod(m, struct ip6_hdr *);
++		bzero(ip6, hlen);
++		ip6->ip6_vfc	= IPV6_VERSION;
++		/* ip6->ip6_flow	= ???; */
++		/* The size of IPv4 packet plus the difference between v6 
++		 * IPv6 and IPv4 header size.
++		 * I've made an assumption that the IPv4 options are unused.
++		 *
++		 * Important: The packet size is now 20 octets longer that is
++		 * it propably should be fragmented.
++		 */
++		ip6->ip6_plen	= npc->npc_ip.v4.ip_len + 20;
++		ip6->ip6_nxt	= npc->npc_next_proto;
++		/* Taking hop limit from v4 TTL if it's smaller than IPV6_DEFHLIM (?)*/
++		if (npc->npc_ip.v4.ip_ttl < IPV6_DEFHLIM)
++			ip6->ip6_hlim	= npc->npc_ip.v4.ip_ttl;
++		else
++			ip6->ip6_hlim	= IPV6_DEFHLIM;
++		memcpy(ip6->ip6_src.s6_addr, src->s6_addr, sizeof(struct in6_addr));
++		memcpy(ip6->ip6_dst.s6_addr, dst->s6_addr, sizeof(struct in6_addr));
++		/* Now we have IPv6 header ready for action */
++		break;
++	}
++
++	default:
++		return -1;
++	}
++
++	return 0;
++}
++
++/*
++ * I've stumbled upon ICMP translation function in OpenBSD source. So I'm
++ * borrowing it.
++ */
++
++int
++npf_icmp_translator(npf_cache_t *npc)
++{
++	struct icmp *icmp4;
++	struct icmp6_hdr *icmp6;
++	u_int32_t mtu;
++	u_int32_t ptr = -1;
++	u_int8_t type;
++	u_int8_t code;
++
++	switch (npc->npc_info) {
++	case NPC_IP6: {
++		icmp6 = &npc->npc_l4.icmp6;
++		type  = icmp6->icmp6_type;
++		code  = icmp6->icmp6_code;
++		mtu   = ntohl(icmp6->icmp6_mtu);
++
++		switch (type) {
++		case ICMP6_ECHO_REQUEST: {
++			type = ICMP_ECHO;
++			break;
++		}
++		case ICMP6_ECHO_REPLY: {
++			type = ICMP_ECHOREPLY;
++			break;
++		}
++		case ICMP6_DST_UNREACH: {
++			type = ICMP_UNREACH;
++			switch (code) {
++			case ICMP6_DST_UNREACH_NOROUTE:
++			case ICMP6_DST_UNREACH_BEYONDSCOPE:
++			case ICMP6_DST_UNREACH_ADDR: {
++				code = ICMP_UNREACH_HOST;
++				break;
++			}
++			case ICMP6_DST_UNREACH_ADMIN: {
++				code = ICMP_UNREACH_HOST_PROHIB;
++				break;
++			}
++			case ICMP6_DST_UNREACH_NOPORT: {
++				code = ICMP_UNREACH_PORT;
++				break;
++			}
++			default:
++				return (-1);
++			}
++			break;
++		}
++		case ICMP6_PACKET_TOO_BIG: {
++			type = ICMP_UNREACH;
++			code = ICMP_UNREACH_NEEDFRAG;
++			mtu -= 20;
++			break;
++		}
++		case ICMP6_TIME_EXCEEDED: {
++			type = ICMP_TIMXCEED;
++			break;
++		}
++		case ICMP6_PARAM_PROB: {
++			switch (code) {
++			case ICMP6_PARAMPROB_HEADER: {
++				type = ICMP_PARAMPROB;
++				code = ICMP_PARAMPROB_ERRATPTR;
++				ptr  = ntohl(icmp6->icmp6_pptr);
++
++				if (ptr == offsetof(struct ip6_hdr, ip6_vfc))
++					; /* preserve */
++				else if (ptr == offsetof(struct ip6_hdr, ip6_vfc) + 1)
++					ptr = offsetof(struct ip, ip_tos);
++				else if (ptr == offsetof(struct ip6_hdr, ip6_plen)
++				    || ptr == offsetof(struct ip6_hdr, ip6_plen) + 1)
++					ptr = offsetof(struct ip, ip_len);
++				else if (ptr == offsetof(struct ip6_hdr, ip6_nxt))
++					ptr = offsetof(struct ip, ip_p);
++				else if (ptr == offsetof(struct ip6_hdr, ip6_hlim))
++					ptr = offsetof(struct ip, ip_ttl);
++				else if (ptr >= offsetof(struct ip6_hdr, ip6_src)
++				    && ptr < offsetof(struct ip6_hdr, ip6_dst))
++					ptr = offsetof(struct ip, ip_src);
++				else if (ptr >= offsetof(struct ip6_hdr, ip6_dst)
++				    && ptr < sizeof(struct ip6_hdr))
++					ptr = offsetof(struct ip, ip_dst);
++				else
++					return -1;
++				break;
++			}
++			case ICMP6_PARAMPROB_NEXTHEADER: {
++				type = ICMP_UNREACH;
++				code = ICMP_UNREACH_PROTOCOL;
++				break;
++			}
++			default:
++				return -1;
++			}
++			break;
++		}
++		default:
++			return -1;
++		}
++		if (icmp6->icmp6_type != type) {
++			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
++			    icmp6->icmp6_type, type);
++			icmp6->icmp6_type = type;
++		}
++		if (icmp6->icmp6_code != code) {
++			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
++			    icmp6->icmp6_code, code);
++			icmp6->icmp6_code = code;
++		}
++		if (icmp6->icmp6_mtu != htonl(mtu)) {
++			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
++			    htons(ntohl(icmp6->icmp6_mtu)), htons(mtu));
++			/* aligns well with a icmpv4 nextmtu */
++			icmp6->icmp6_mtu = htonl(mtu);
++		}
++		if (icmp6->icmp6_pptr != htonl(ptr)) {
++			icmp6->icmp6_cksum = npf_fixup16_cksum(icmp6->icmp6_cksum,
++			    htons(ntohl(icmp6->icmp6_pptr)), htons(ptr));
++			/* icmpv4 pptr is a one most significant byte */
++			icmp6->icmp6_pptr = htonl(ptr << 24);
++		}
++		break;
++	}
++	case NPC_IP4: {
++		icmp4 = &npc->npc_l4.icmp;
++		type  = icmp4->icmp_type;
++		code  = icmp4->icmp_code;
++		mtu   = ntohs(icmp4->icmp_nextmtu);
++
++		switch (type) {
++		case ICMP_ECHO: {
++			type = ICMP6_ECHO_REQUEST;
++			break;
++		}
++		case ICMP_ECHOREPLY: {
++			type = ICMP6_ECHO_REPLY;
++			break;
++		}
++		case ICMP_UNREACH: {
++			type = ICMP6_DST_UNREACH;
++			switch (code) {
++			case ICMP_UNREACH_NET:
++			case ICMP_UNREACH_HOST:
++			case ICMP_UNREACH_NET_UNKNOWN:
++			case ICMP_UNREACH_HOST_UNKNOWN:
++			case ICMP_UNREACH_ISOLATED:
++			case ICMP_UNREACH_TOSNET:
++			case ICMP_UNREACH_TOSHOST: {
++				code = ICMP6_DST_UNREACH_NOROUTE;
++				break;
++			}
++			case ICMP_UNREACH_PORT: {
++				code = ICMP6_DST_UNREACH_NOPORT;
++				break;
++			}
++			case ICMP_UNREACH_NET_PROHIB:
++			case ICMP_UNREACH_HOST_PROHIB: {
++				code = ICMP6_DST_UNREACH_ADMIN;
++				break;
++			}
++			case ICMP_UNREACH_PROTOCOL: {
++				type = ICMP6_PARAM_PROB;
++				code = ICMP6_PARAMPROB_NEXTHEADER;
++				ptr  = offsetof(struct ip6_hdr, ip6_nxt);
++				break;
++			}
++			case ICMP_UNREACH_NEEDFRAG: {
++				type = ICMP6_PACKET_TOO_BIG;
++				code = 0;
++				mtu += 20;
++				break;
++			}
++			default:
++				return -1;
++			}
++			break;
++		}
++		case ICMP_TIMXCEED: {
++			type = ICMP6_TIME_EXCEEDED;
++			break;
++		}
++		case ICMP_PARAMPROB: {
++			type = ICMP6_PARAM_PROB;
++
++			switch (code) {
++			case ICMP_PARAMPROB_ERRATPTR: {
++				code = ICMP6_PARAMPROB_HEADER;
++				break;
++			}
++			case ICMP_PARAMPROB_LENGTH: {
++				code = ICMP6_PARAMPROB_HEADER;
++				break;
++			}
++			default:
++				return -1;
++			}
++
++			ptr = icmp4->icmp_pptr;
++			if (ptr == 0 || ptr == offsetof(struct ip, ip_tos))
++				; /* preserve */
++			else if (ptr == offsetof(struct ip, ip_len)
++			    || ptr == offsetof(struct ip, ip_len) + 1)
++				ptr = offsetof(struct ip6_hdr, ip6_plen);
++			else if (ptr == offsetof(struct ip, ip_ttl))
++				ptr = offsetof(struct ip6_hdr, ip6_hlim);
++			else if (ptr == offsetof(struct ip, ip_p))
++				ptr = offsetof(struct ip6_hdr, ip6_nxt);
++			else if (ptr >= offsetof(struct ip, ip_src)
++			    && ptr < offsetof(struct ip, ip_dst))
++				ptr = offsetof(struct ip6_hdr, ip6_src);
++			else if (ptr >= offsetof(struct ip, ip_dst)
++			    && ptr < sizeof(struct ip))
++				ptr = offsetof(struct ip6_hdr, ip6_dst);
++			else
++				return -1;
++			break;
++		}
++		default:
++			return -1;
++		}
++		if (icmp4->icmp_type != type) {
++			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
++			    icmp4->icmp_type, type);
++			icmp4->icmp_type = type;
++		}
++		if (icmp4->icmp_code != code) {
++			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
++			    icmp4->icmp_code, code);
++			icmp4->icmp_code = code;
++		}
++		if (icmp4->icmp_nextmtu != htons(mtu)) {
++			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
++			    icmp4->icmp_nextmtu, htons(mtu));
++			icmp4->icmp_nextmtu = htons(mtu);
++		}
++		if ((uint32_t)icmp4->icmp_void != ptr) {
++			icmp4->icmp_cksum = npf_fixup16_cksum(icmp4->icmp_cksum,
++			    htons(icmp4->icmp_pptr), htons(ptr));
++			icmp4->icmp_void = htonl(ptr);
++		}
++		break;
++	}
++	default:
++		return -1;
++	}
++	return 0;
++}
++
++/*
+  * npf_tcpsaw: helper to fetch SEQ, ACK, WIN and return TCP data length.
+  *
+  * => Returns all values in host byte-order.
+@@ -620,9 +1042,9 @@
+ 	} else {
+ 		/* No checksum for IPv6. */
+ 		KASSERT(npf_iscached(npc, NPC_IP6));
+-		oaddr = NULL;
+-		offby = 0;
+-		return false;	/* XXX: Not yet supported. */
++		oaddr = (di == PFIL_OUT) ? npc->npc_srcip : npc->npc_dstip;
++		/* Set the offset to point the payload. */
++		offby = npf_cache_hlen(npc); 
+ 	}
+ 
+ 	/* Determine whether TCP/UDP checksum update is needed. */
+Index: sys/net/npf/npf_nat.c
+===================================================================
+RCS file: /cvsroot/src/sys/net/npf/npf_nat.c,v
+retrieving revision 1.17
+diff -u -r1.17 npf_nat.c
+--- sys/net/npf/npf_nat.c	15 Aug 2012 18:44:56 -0000	1.17
++++ sys/net/npf/npf_nat.c	20 Aug 2012 16:59:02 -0000
+@@ -90,7 +90,21 @@
+ #include <sys/cprng.h>
+ 
+ #include <net/pfil.h>
++#include <net/if.h>
++#include <net/if_types.h>
++#include <net/if_dl.h>
++#include <net/route.h>
++#include <net/radix.h>
++
+ #include <netinet/in.h>
++#include <netinet6/in6_var.h>
++#include <netinet6/in6_ifattach.h>
++#include <netinet/ip6.h>
++#include <netinet6/ip6_var.h>
++#include <netinet6/nd6.h>
++#include <netinet/icmp6.h>
++#include <netinet6/icmp6_private.h>
++#include <netinet6/scope6_var.h>
+ 
+ #include "npf_impl.h"
+ 
+@@ -120,11 +134,15 @@
+ 	kmutex_t		n_lock;
+ 	kcondvar_t		n_cv;
+ 	npf_portmap_t *		n_portmap;
+-	/* NPF_NP_CMP_START */
+ 	int			n_type;
+ 	u_int			n_flags;
+ 	size_t			n_addr_sz;
+ 	npf_addr_t		n_taddr;
++	size_t			n_taddr_sz;
++	npf_addr_t		n_faddr;
++	size_t			n_faddr_sz;
++	npf_netmask_t		n_px;
++	uint16_t		n_adj;
+ 	in_port_t		n_tport;
+ };
+ 
+@@ -191,43 +209,75 @@
+ 	prop_dictionary_get_int32(natdict, "type", &np->n_type);
+ 	prop_dictionary_get_uint32(natdict, "flags", &np->n_flags);
+ 
+-	/* Should be exclusively either inbound or outbound NAT. */
+-	if (((np->n_type == NPF_NATIN) ^ (np->n_type == NPF_NATOUT)) == 0) {
+-		kmem_free(np, sizeof(npf_natpolicy_t));
+-		return NULL;
+-	}
+-	mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
+-	cv_init(&np->n_cv, "npfnatcv");
+-	LIST_INIT(&np->n_nat_list);
+-
+-	/* Translation IP. */
+-	obj = prop_dictionary_get(natdict, "translation-ip");
+-	np->n_addr_sz = prop_data_size(obj);
+-	KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+-	memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+-
+-	/* Translation port (for redirect case). */
+-	prop_dictionary_get_uint16(natdict, "translation-port", &np->n_tport);
+-
+-	/* Determine if port map is needed. */
+-	np->n_portmap = NULL;
+-	if ((np->n_flags & NPF_NAT_PORTMAP) == 0) {
+-		/* No port map. */
+-		return np;
+-	}
++	if (np->n_flags & NPF_NAT_66) {
++		/* 66 is the NPT part */
++		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
++		cv_init(&np->n_cv, "npfnatcv");
++		LIST_INIT(&np->n_nat_list);
++
++		/* I don't know what to do with n_addr_sz which for sanity
++		 * should be divided in to two parts (from,to). But currently
++		 * it doesn't matter - both addresses are the same length.
++		 * "looking ok" spz
++		 */
++
++		/* IP to which translete */
++		if (np->n_type == NPF_NATOUT) {
++			obj = prop_dictionary_get(natdict, "translation-ip");
++			np->n_addr_sz = prop_data_size(obj);
++			KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
++			memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
++		}
++
++		/* IP from which translate */	
++		if (np->n_type == NPF_NATIN) {
++			obj = prop_dictionary_get(natdict, "translation-ip");
++			np->n_addr_sz = prop_data_size(obj);
++			KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
++			memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
++		}
++		prop_dictionary_get_uint8(natdict, "prefix", &np->n_px);
+ 
+-	/*
+-	 * Inspect NAT policies in the ruleset for port map sharing.
+-	 * Note that npf_ruleset_sharepm() will increase the reference count.
+-	 */
+-	if (!npf_ruleset_sharepm(nrlset, np)) {
+-		/* Allocate a new port map for the NAT policy. */
+-		pm = kmem_zalloc(PORTMAP_MEM_SIZE, KM_SLEEP);
+-		pm->p_refcnt = 1;
+-		KASSERT((uintptr_t)pm->p_bitmap == (uintptr_t)pm + sizeof(*pm));
+-		np->n_portmap = pm;
+ 	} else {
+-		KASSERT(np->n_portmap != NULL);
++
++		/* Should be exclusively either inbound or outbound NAT. */
++		if (((np->n_type == NPF_NATIN) ^ (np->n_type == NPF_NATOUT)) == 0) {
++			kmem_free(np, sizeof(npf_natpolicy_t));
++			return NULL;
++		}
++		mutex_init(&np->n_lock, MUTEX_DEFAULT, IPL_SOFTNET);
++		cv_init(&np->n_cv, "npfnatcv");
++		LIST_INIT(&np->n_nat_list);
++
++		/* Translation IP. */
++		obj = prop_dictionary_get(natdict, "translation-ip");
++		np->n_addr_sz = prop_data_size(obj);
++		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
++		memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
++
++		/* Translation port (for redirect case). */
++		prop_dictionary_get_uint16(natdict, "translation-port", &np->n_tport);
++
++		/* Determine if port map is needed. */
++		np->n_portmap = NULL;
++		if ((np->n_flags & NPF_NAT_PORTMAP) == 0) {
++			/* No port map. */
++			return np;
++		}
++
++		/*
++		 * Inspect NAT policies in the ruleset for port map sharing.
++		 * Note that npf_ruleset_sharepm() will increase the reference count.
++		 */
++		if (!npf_ruleset_sharepm(nrlset, np)) {
++			/* Allocate a new port map for the NAT policy. */
++			pm = kmem_zalloc(PORTMAP_MEM_SIZE, KM_SLEEP);
++			pm->p_refcnt = 1;
++			KASSERT((uintptr_t)pm->p_bitmap == (uintptr_t)pm + sizeof(*pm));
++			np->n_portmap = pm;
++		} else {
++			KASSERT(np->n_portmap != NULL);
++		}
+ 	}
+ 	return np;
+ }
+@@ -572,6 +622,219 @@
+ 	return 0;
+ }
+ 
++static int
++npf_npt_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_natpolicy_t *np,
++    const int di)
++{
++	void *n_ptr = nbuf_dataptr(nbuf);
++	npf_addr_t *addr, *oaddr;
++	u_int offby;
++	KASSERT(npf_iscached(npc, NPC_IP46));
++	npf_netmask_t px = np->n_px;
++
++	uint16_t adj;
++
++	/* Calculate addjustment from propper parts of addresses.
++	 * This will be done smarter way later like this:
++
++	uint16_t adj = np->n_adj;
++
++	 */
++	adj = npf_npt_adj_calc(px, &np->n_faddr, &np->n_taddr);
++
++	if (in6_are_prefix_equal(&np->n_faddr, npc->npc_srcip, px)) { 
++		/* "Forwards" */
++		KASSERT(
++		    (np->n_type == NPF_NATIN && di == PFIL_IN) ^
++		    (np->n_type == NPF_NATOUT && di == PFIL_OUT)
++		);
++
++		addr = npc->npc_srcip;
++		oaddr = npc->npc_srcip;
++
++		npf_npt_adj_add(px, addr, adj);
++
++		offby = offsetof(struct ip, ip_src);
++	} else if (in6_are_prefix_equal(&np->n_taddr, npc->npc_dstip, px)) { 
++		/* "Backwards" */
++		KASSERT(
++		    (np->n_type == NPF_NATIN && di == PFIL_OUT) ^
++		    (np->n_type == NPF_NATOUT && di == PFIL_IN)
++		);
++
++		addr = npc->npc_dstip;
++		oaddr = npc->npc_dstip;
++
++		npf_npt_adj_sub(px, addr, adj);
++
++		offby = offsetof(struct ip, ip_dst);
++	} else {
++		/* As far as I know We shouldn't be here. */
++	}
++
++	/* Advance to the adress and rewrite it. */
++	if (nbuf_advstore(&nbuf, &n_ptr, offby, npc->npc_alen, addr))
++		return EINVAL;
++	/* Should We cache it? */
++	memcpy(oaddr, addr, npc->npc_alen);
++	return 0;
++}
++
++/*
++ * npf_nat46_translate: we are doing translation from v4 to v6 world.
++ * The translatio requires npf_nat_t entry that will tell us to which
++ * which addres we are translating to and what port we should use.
++ */
++static int
++npf_nat46_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
++    const bool forw, const int di)
++{
++	void *n_ptr = nbuf_dataptr(nbuf);
++	npf_natpolicy_t *np = nt->nt_natpolicy;
++	npf_addr_t src, *dst, *addr;
++	in_port_t port;
++
++	KASSERT(npf_iscached(npc, NPC_IP46));
++
++	/* We need to translate v4 src addres to v6 understandable. */
++	npf_v4_to_v6(&src, &np->n_taddr);
++
++	/* The destination is saved in nt, so use it. */
++	dst = &nt->nt_oaddr;
++
++	/* The port is the orginal port saved in nt, use it. */
++	port = nt->nt_oport;
++
++	/* Make sure that we are using ports. */
++	KASSERT(((np->n_flags & NPF_NAT_PORTS) != 0) && (port != 0));
++
++	/*
++	 * Somewhere here there is important step to mess with the
++	 * IPv4 header. Lets say it... The SIZE matters. It's 20
++	 * octets shorter than IPv6 header...
++	 * Sad thing but it's not the only issue. The header options
++	 * need to be translated also. We also need to remember about
++	 * payload sizes and MTU differences.
++	 * So in general we need to create new function like:
++	 * npf_nbuf_af_translator()
++	 * that should do the hard stuff. Mean while need to study
++	 * the nbuf/mbuf a little bit more.
++	 */
++	if (npf_cache_ipproto(npc) == IPPROTO_ICMP)
++		npf_icmp_translator(npc);
++	
++	npf_af_translator(npc, &nbuf, &src, dst);
++
++	/* It would be good to update npc cause we got new packet here. */
++
++	npf_cache_all(npc, nbuf); /* This might do the trick. */
++
++	/* Execute ALG hook first. */
++	npf_alg_exec(npc, nbuf, nt, di);
++
++	/*
++	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
++	 * the cache containing original values for checksum calculation.
++	 */
++	addr = (di == PFIL_IN) ? &src : dst;
++	/* This is still wrong. We are not updating! We should calculate
++	 * it as new checksum.
++	 */
++	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
++		return EINVAL;
++	}
++
++	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
++		/* Done. */
++		return 0;
++	}
++
++	switch (npf_cache_ipproto(npc)) {
++	case IPPROTO_TCP:
++	case IPPROTO_UDP:
++		KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
++		if (!npf_rwrport(npc, nbuf, n_ptr, di, port)) {
++			return EINVAL;
++		}
++		break;
++	case IPPROTO_ICMPV6: /* Now ICMPv4 should be cached as ICMPv6 */
++		KASSERT(npf_iscached(npc, NPC_ICMP));
++		/* Nothing */
++		break;
++	default:
++		return ENOTSUP;
++	}
++	return 0;
++}
++
++static int
++npf_nat64_translate(npf_cache_t *npc, nbuf_t *nbuf, npf_nat_t *nt,
++    const bool forw, const int di)
++{
++	void *n_ptr = nbuf_dataptr(nbuf);
++	npf_natpolicy_t *np = nt->nt_natpolicy;
++	npf_addr_t src, *dst, *addr;
++	in_port_t port;
++
++	KASSERT(npf_iscached(npc, NPC_IP46));
++
++	/* We need to translate v4 src addres to v6 understandable. */
++	npf_v6_to_v4(&src, &np->n_taddr);
++
++	/* The destination is saved in nt, so use it. */
++	dst = &nt->nt_oaddr;
++
++	/* The port is the orginal port saved in nt, use it. */
++	port = nt->nt_oport;
++
++	/* Make sure that we are using ports. */
++	KASSERT(((np->n_flags & NPF_NAT_PORTS) != 0) && (port != 0));
++
++	/*
++	 * Now we have the same header madness but the other way around...
++	 */
++	
++	if (npf_cache_ipproto(npc) == IPPROTO_ICMPV6)
++		npf_icmp_translator(npc);
++
++	npf_af_translator(npc, &nbuf, &src, dst);
++
++	/* Execute ALG hook first. */
++	npf_alg_exec(npc, nbuf, nt, di);
++
++	/*
++	 * Rewriet IP and/or TCP/UDP checksums, first, since it will use
++	 * the cache containing original values for checksum calculation.
++	 */
++	addr = (di == PFIL_IN) ? &src : dst;
++
++	if (!npf_rwrcksum(npc, nbuf, n_ptr, di, addr, port)) {
++		return EINVAL;
++	}
++
++	if ((np->n_flags & NPF_NAT_PORTS) == 0) {
++		/* Done. */
++		return 0;
++	}
++
++	switch (npf_cache_ipproto(npc)) {
++	case IPPROTO_TCP:
++	case IPPROTO_UDP:
++		KASSERT(npf_iscached(npc, NPC_TCP) || npf_iscached(npc, NPC_UDP));
++		if (!npf_rwrport(npc, nbuf, n_ptr, di, port)) {
++			return EINVAL;
++		}
++		break;
++	case IPPROTO_ICMP: /* Now ICMPv6 should be cached as ICMPv4 */
++		KASSERT(npf_iscached(npc, NPC_ICMP));
++		/* Nothing */
++		break;
++	default:
++		return ENOTSUP;
++	}
++	return 0;
++}
++
+ /*
+  * npf_do_nat:
+  *	- Inspect packet for a NAT policy, unless a session with a NAT
+@@ -596,6 +859,9 @@
+ 		return 0;
+ 	}
+ 
++	if (npf_iscached(npc, NPC_IP6))
++		return npf_do_nat64(npc, se, nbuf, ifp, di);
++
+ 	/*
+ 	 * Return the NAT entry associated with the session, if any.
+ 	 * Determines whether the stream is "forwards" or "backwards".
+@@ -604,6 +870,11 @@
+ 	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
+ 		np = nt->nt_natpolicy;
+ 		new = false;
++		if ((nt->nt_oaddr.s6_addr32[1]
++		     | nt->nt_oaddr.s6_addr32[2]
++		     | nt->nt_oaddr.s6_addr32[3]) != 0)
++			return npf_do_nat46(npc, se, nbuf, ifp, di);
++
+ 		goto translate;
+ 	}
+ 
+@@ -681,6 +952,120 @@
+ 	return error;
+ }
+ 
++int
++npf_do_npt(npf_cache_t *npc, nbuf_t *nbuf, const ifnet_t *ifp, const int di)
++{
++        npf_natpolicy_t *np;
++        int error;
++
++        /* All relevant IP data should be already cached. */
++        if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
++                return 0;
++        }
++
++        /*
++         * Inspect the packet for a NAT policy, if there is no session.
++         * Note: acquires the lock (releases, if not found).
++         */
++        np = npf_nat_inspect(npc, nbuf, ifp, di);
++        if (np == NULL) {
++                /* If packet does not match - done. */
++                return 0;
++        }
++
++        /* Perform the translation. */
++        error = npf_npt_translate(npc, nbuf, np, di);
++        return error;
++}
++
++/*
++ * npf_do_nat46: translates from v4 backto v6 using previously created
++ * session entry. If no session, do nothing (cleanly).
++ */
++int
++npf_do_nat46(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
++    const ifnet_t *ifp, const int di)
++{
++	npf_nat_t *nt;
++        int error = 0;
++	bool forw;
++
++        /* All relevant IP data should be already cached. */
++        if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
++                return 0;
++        }
++	/* NOTICE: npf_session_retnat should be modified to support NAT46 */
++	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
++        	error = npf_nat46_translate(npc, nbuf, nt, forw, di);
++	}
++
++	return error;
++}
++
++/*
++ *
++ */
++int
++npf_do_nat64(npf_cache_t *npc, npf_session_t *se, nbuf_t *nbuf,
++    const ifnet_t *ifp, const int di)
++{
++	npf_session_t *nse = NULL;
++	npf_natpolicy_t *np;
++	npf_nat_t *nt;
++	int error;
++	bool new, forw;
++	if (!npf_iscached(npc, NPC_IP46) || !npf_iscached(npc, NPC_LAYER4)) {
++		return 0;
++	}
++	if (se && (nt = npf_session_retnat(se, di, &forw)) != NULL) {
++		np = nt->nt_natpolicy;
++		new = false;
++	} else {
++		np = npf_nat_inspect(npc, nbuf, ifp, di);
++		if (np == NULL) {
++			return 0;
++		}
++
++		nt = npf_nat_create(npc, np);
++		if (nt == NULL) {
++			npf_core_exit();
++			return ENOMEM;
++		}
++		npf_core_exit();
++		new = true;
++		if (npf_alg_match(npc, nbuf, nt)) {
++			KASSERT(nt->nt_alg != NULL);
++		}
++
++		if (se == NULL) {
++			nse = npf_session_establish(npc, nbuf, ifp, di);
++			if (nse == NULL) {
++				error = ENOMEM;
++			/*	goto out; */
++			} else {
++				se = nse;
++			}
++		}
++	}
++	if (!error) {
++		error = npf_nat64_translate(npc, nbuf, nt, forw, di);
++		if (__predict_false(new)) {
++			nt->nt_session = se;
++			error = npf_session_setnat(se, nt, di);
++		}
++	}
++	if (error) {
++		if (nse) {
++			npf_session_expire(nse);
++		}
++		npf_nat_expire(nt);
++	}
++	if (__predict_false(new) && nse) {
++		npf_session_release(nse);
++	}
++	return error;
++}
++
+ /*
+  * npf_nat_gettrans: return translation IP address and port.
+  */
