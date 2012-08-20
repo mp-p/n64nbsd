@@ -222,17 +222,20 @@ npf_nat_newpolicy(prop_dictionary_t natdict, npf_ruleset_t *nrlset)
 		 */
 
 		/* IP to which translete */
-		obj = prop_dictionary_get(natdict, "to-ip");
-		np->n_addr_sz = prop_data_size(obj);
-		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
-		memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+		if (np->n_type == NPF_NATOUT) {
+			obj = prop_dictionary_get(natdict, "translation-ip");
+			np->n_addr_sz = prop_data_size(obj);
+			KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+			memcpy(&np->n_taddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+		}
 
 		/* IP from which translate */	
-		obj = prop_dictionary_get(natdict, "from-ip");
-		np->n_addr_sz = prop_data_size(obj);
-		KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
-		memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
-
+		if (np->n_type == NPF_NATIN) {
+			obj = prop_dictionary_get(natdict, "translation-ip");
+			np->n_addr_sz = prop_data_size(obj);
+			KASSERT(np->n_addr_sz > 0 && np->n_addr_sz <= sizeof(npf_addr_t));
+			memcpy(&np->n_faddr, prop_data_data_nocopy(obj), np->n_addr_sz);
+		}
 		prop_dictionary_get_uint8(natdict, "prefix", &np->n_px);
 
 	} else {
