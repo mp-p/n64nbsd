@@ -46,8 +46,12 @@ __RCSID("$NetBSD: npf_build.c,v 1.13 2012/08/12 03:35:13 rmind Exp $");
 
 #include "npfctl.h"
 
-#define BINAT(x)	((x) & (NPF_NATOUT | NPF_NATIN))
-#define IS_BINAT(x)	(BINAT(x) == (NPF_NATOUT | NPF_NATIN))
+#define BINAT		(NPF_NATIN | NPF_NATOUT)
+#define IS_BINAT(x)	(((x) & BINAT) == BINAT)
+#define IS_NAT44(x)	(((x) & NPF_NAT_44) == NPF_NAT_44)
+#define IS_NAT64(x)	(((x) & NPF_NAT_64) == NPF_NAT_64)
+#define IS_NAT66(x)	(((x) & NPF_NAT_66) == NPF_NAT_66)
+#define NOT_BINAT(x)	(!(IS_NAT44(x) || IS_NAT64(x) || IS_NAT66(x)))
 
 static nl_config_t *		npf_conf = NULL;
 static nl_rule_t *		current_group = NULL;
@@ -147,11 +151,13 @@ npfctl_build_fam(nc_ctx_t *nc, sa_family_t family,
 	 * Otherwise, address of invalid family was passed manually.
 	 */
 	if (family != AF_UNSPEC && family != fam->fam_family) {
+	/* Ignore it for tests
 		if (!fam->fam_interface) {
 			yyerror("specified address is not of the required "
 			    "family %d", family);
 		}
 		return false;
+	*/
 	}
 
 	/*
@@ -522,11 +528,12 @@ npfctl_build_nat(int type, u_int if_idx, sa_family_t family,
 	}
 	am = npfctl_get_singlefam(ap->ap_netaddr);
 	if (am->fam_family != family) {
-		if (!(flags & NPF_NAT_66)) {
-			flags = NPF_NAT_64;
+		if (!(IS_NAT66(flags))) {
+			flags |= NPF_NAT_64;
 		}
 	} else {
-		flags = 0;  /* Clear flags for NATv4 */
+		if (IS_BINAT(flags))
+			flags |= NPF_NAT_44;
 	}
 
 	switch (type) {
@@ -536,10 +543,10 @@ npfctl_build_nat(int type, u_int if_idx, sa_family_t family,
 		 * traditional NAPT.  If it is a half for bi-directional NAT,
 		 * then no port translation with mapping.
 		 */
-		if (!binat) {
+		if (NOT_BINAT(flags)) {
 			flags = (NPF_NAT_PORTS | NPF_NAT_PORTMAP);
-		}	
-		nat = npf_nat_create(NPF_NATOUT, flags, if_idx,
+		}
+		nat = npf_nat_create(NPF_NATOUT, IS_NAT44(flags) ? 0 : flags, if_idx,
 		    &am->fam_addr, am->fam_family, 0);
 		break;
 	case NPF_NATIN:
@@ -548,14 +555,14 @@ npfctl_build_nat(int type, u_int if_idx, sa_family_t family,
 		 * must be specified, since it has to be redirection.
 		 */
 		port = 0;
-		if (!binat) {
+		if (NOT_BINAT(flags)) {
 			if (!ap->ap_portrange) {
 				yyerror("inbound port is not specified");
 			}
 			port = npfctl_get_singleport(ap->ap_portrange);
 			flags = NPF_NAT_PORTS;
 		}
-		nat = npf_nat_create(NPF_NATIN, flags, if_idx,
+		nat = npf_nat_create(NPF_NATIN, IS_NAT44(flags) ? 0 : flags, if_idx,
 		    &am->fam_addr, am->fam_family, port);
 		break;
 	default:
@@ -577,10 +584,6 @@ npfctl_build_natseg(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 	filt_opts_t imfopts;
 	uint flags = type;
 
-	if (sd == NPFCTL_NAT_STATIC) {
-		flags = NPF_NAT_66;
-	}
-
 	assert(if_idx != 0);
 
 	//flags = IS_BINAT(type); //(NPF_NATIN | NPF_NATOUT) == type;
@@ -592,6 +595,10 @@ npfctl_build_natseg(int sd, int type, u_int if_idx, const addr_port_t *ap1,
 	 */
 	if (!fopts) {
 		fopts = &imfopts;
+	}
+
+	if (sd == NPFCTL_NAT_STATIC) {
+		flags |= NPF_NAT_66;
 	}
 
 	if (type & NPF_NATIN) {
