@@ -27,6 +27,8 @@
 #define SIX_IP1		"2001:dead::11"
 #define SIX_IP2		"2001:beef::22"
 
+#define SIX_IP1_ADJ	"2001:beef:0:ffff::11" /* Calculated from RFC (?) */
+
 #define	RESULT_PASS	0
 #define	RESULT_BLOCK	ENETUNREACH
 
@@ -125,11 +127,30 @@ static const struct test_case {
 	 *	map $six_if static $six_ip1 <-> $six_ip2
 	 */
 	{
-		SIX_IP2,	17000,		SIX_IP1,	9000,
+		SIX_IP1,	17000,		SIX_IP2,	9000,
+		NPF_BINAT,	IFNAME_SIX,	PFIL_OUT,
+		RESULT_PASS,	SIX_IP1_ADJ,	9000
+	},
+	{
+		SIX_IP2,	17000,		SIX_IP1_ADJ,	9000,
 		NPF_BINAT,	IFNAME_SIX,	PFIL_IN,
 		RESULT_PASS,	SIX_IP1,	9000
 	},
 
+	/*
+	 * Network Address Translation v6:
+	 *	map $six_if dynamic $six_ip1 <-> $pub_ip1
+	 */
+	{
+		SIX_IP1,	17000,		REMOTE_IP1,	9000,
+		NPF_BINAT,	IFNAME_SIX,	PFIL_OUT,
+		RESULT_PASS,	PUB_IP1,	9000
+	},
+	{
+		REMOTE_IP1,	9000,		PUB_IP1,	17000,
+		NPF_BINAT,	IFNAME_SIX,	PFIL_IN,
+		RESULT_PASS,	SIX_IP1,	17000
+	},
 };
 
 static bool
@@ -140,9 +161,19 @@ nmatch_addr(const char *saddr, const struct in_addr *addr2)
 }
 
 static bool
+nmatch_addr6(const char *saddr, const struct in6_addr *addr2)
+{
+	const struct in6_addr addr1;
+//	inet_pton(AF_INET6, saddr, &addr1, sizeof(saddr));
+	return memcmp(&addr1, &addr2->s6_addr, sizeof(struct in6_addr)) != 0;
+}
+
+static bool
 checkresult(bool verbose, unsigned i, struct mbuf *m, int error)
 {
 	const struct test_case *t = &test_cases[i];
+	const struct ip *ip;
+	const struct ip6_hdr *ip6;
 	npf_cache_t npc = { .npc_info = 0 };
 
 	if (verbose) {
@@ -155,15 +186,30 @@ checkresult(bool verbose, unsigned i, struct mbuf *m, int error)
 		printf("error: could not fetch the packet data");
 		return false;
 	}
-
-	const struct ip *ip = &npc.npc_ip.v4;
+	if (npf_iscached(&npc, NPC_IP4)) {
+		ip = &npc.npc_ip.v4;
+	} else if (npf_iscached(&npc, NPC_IP6)) {
+		ip6 = &npc.npc_ip.v6;
+	} else {
+		printf("error: could not fetch the packet header");
+		return false;
+	}
 	const struct udphdr *uh = &npc.npc_l4.udp;
+	char src[30];
+	char dst[30];
 
 	if (verbose) {
+		if (npf_iscached(&npc, NPC_IP4)) {
+/*			inet_ntop(AF_INET, ip->ip_src, &src, sizeof(src));
+			inet_ntop(AF_INET, ip->ip_dst, &dst, sizeof(dst));
+*/		} else {
+/*			inet_ntop(AF_INET6, ip6->ip6_src, &src, sizeof(src));
+			inet_ntop(AF_INET6, ip6->ip6_dst, &dst, sizeof(dst));
+*/		}
 		printf("\tpost-translation: src %s (%d)",
-		    inet_ntoa(ip->ip_src), ntohs(uh->uh_sport));
+		    src, ntohs(uh->uh_sport));
 		printf(" dst %s (%d)\n",
-		    inet_ntoa(ip->ip_dst), ntohs(uh->uh_dport));
+		    dst, ntohs(uh->uh_dport));
 	}
 
 	const bool forw = t->di == PFIL_OUT;
@@ -173,9 +219,15 @@ checkresult(bool verbose, unsigned i, struct mbuf *m, int error)
 	in_addr_t dport = forw ? t->dport : t->tport;
 
 	bool defect = false;
-	defect |= nmatch_addr(saddr, &ip->ip_src);
+
+	if (npf_iscached(&npc, NPC_IP4)) {
+		defect |= nmatch_addr(saddr, &ip->ip_src);
+		defect |= nmatch_addr(daddr, &ip->ip_dst);
+	} else {
+		defect |= nmatch_addr6(saddr, &ip6->ip6_src);
+		defect |= nmatch_addr6(daddr, &ip6->ip6_dst);
+	}
 	defect |= sport != ntohs(uh->uh_sport);
-	defect |= nmatch_addr(daddr, &ip->ip_dst);
 	defect |= dport != ntohs(uh->uh_dport);
 
 	return !defect && error == t->ret;
